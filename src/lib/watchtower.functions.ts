@@ -222,3 +222,84 @@ export const getTopOffenders = createServerFn({ method: "GET" }).handler(async (
     LIMIT 25
   `);
 });
+
+// ---------- Case Mutations (Phase 2) ----------
+export type CaseUpdateInput = {
+  id: string;
+  status?: "DRAFT" | "REVIEW" | "CONFIRMED" | "PUBLISHED" | "DISMISSED";
+  reviewer_notes?: string | null;
+  public_summary?: string | null;
+  dismissed_reason?: string | null;
+  reviewed_by?: string | null;
+  is_published?: boolean;
+};
+
+export const updateCase = createServerFn({ method: "POST" })
+  .inputValidator((d: CaseUpdateInput) => {
+    if (!d?.id) throw new Error("id required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const sets: string[] = ["updated_at = now()"];
+    const params: unknown[] = [];
+    const push = (col: string, val: unknown) => {
+      params.push(val);
+      sets.push(`${col} = $${params.length}`);
+    };
+    if (data.status !== undefined) {
+      push("status", data.status);
+      if (data.status === "CONFIRMED" || data.status === "DISMISSED" || data.status === "PUBLISHED") {
+        sets.push(`reviewed_at = now()`);
+      }
+    }
+    if (data.reviewer_notes !== undefined) push("reviewer_notes", data.reviewer_notes);
+    if (data.public_summary !== undefined) push("public_summary", data.public_summary);
+    if (data.dismissed_reason !== undefined) push("dismissed_reason", data.dismissed_reason);
+    if (data.reviewed_by !== undefined) push("reviewed_by", data.reviewed_by);
+    if (data.is_published !== undefined) {
+      push("is_published", data.is_published);
+      if (data.is_published) sets.push(`published_at = COALESCE(published_at, now())`);
+    }
+    params.push(data.id);
+    const rows = await q<{ id: string }>(
+      `UPDATE cases SET ${sets.join(", ")}
+       WHERE case_id = $${params.length} OR id::text = $${params.length}
+       RETURNING id`,
+      params,
+    );
+    return { ok: true, id: rows[0]?.id ?? null };
+  });
+
+// ---------- Case Evidence (joined detail for brief / export) ----------
+export type CaseEvidence = {
+  detections: DetectionRow[];
+  alerts: AlertRow[];
+};
+
+export const getCaseEvidence = createServerFn({ method: "GET" })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }) => {
+    const caseRows = await q<{ detection_ids: string[] | null; subject_icao: string | null }>(
+      `SELECT detection_ids, subject_icao FROM cases WHERE case_id = $1 OR id::text = $1 LIMIT 1`,
+      [data.id],
+    );
+    const c = caseRows[0];
+    if (!c) return { detections: [], alerts: [] } as CaseEvidence;
+    const ids = (c.detection_ids ?? []).slice(0, 50);
+    const detections = ids.length
+      ? await q<DetectionRow>(
+          `SELECT id, captured_at, icao_hex, registration, callsign, altitude_ft, speed_kts,
+                  county, zone, latitude, longitude, is_military, is_91_227_violator, emergency
+           FROM detections WHERE id = ANY($1::uuid[]) ORDER BY captured_at DESC`,
+          [ids],
+        )
+      : [];
+    const alerts = c.subject_icao
+      ? await q<AlertRow>(
+          `SELECT id, icao_hex, registration, altitude_ft, distance_mi, captured_at, alert_level, reason, sha256_hash
+           FROM aoi_alerts WHERE icao_hex = $1 ORDER BY captured_at DESC LIMIT 25`,
+          [c.subject_icao],
+        )
+      : [];
+    return { detections, alerts } as CaseEvidence;
+  });

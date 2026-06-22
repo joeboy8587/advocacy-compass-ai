@@ -106,20 +106,29 @@ export const getCases = createServerFn({ method: "GET" })
     );
   });
 
+export type CaseDetail = CaseRow & {
+  reviewer_notes: string | null;
+  dismissed_reason: string | null;
+  public_summary: string | null;
+  sha256_hash: string | null;
+  merkle_block: number | null;
+  detection_ids: string[] | null;
+  anomaly_ids: string[] | null;
+  violation_ids: string[] | null;
+  convergence_ids: string[] | null;
+  reviewed_by: string | null;
+  bh_strength: boolean | null;
+  bh_consistency: boolean | null;
+  bh_specificity: boolean | null;
+  bh_temporality: boolean | null;
+  bh_corroboration: boolean | null;
+  evidence_sufficient: boolean | null;
+};
+
 export const getCaseById = createServerFn({ method: "GET" })
   .inputValidator((d: { id: string }) => d)
   .handler(async ({ data }) => {
-    const rows = await q<CaseRow & {
-      reviewer_notes: string | null;
-      dismissed_reason: string | null;
-      public_summary: string | null;
-      sha256_hash: string | null;
-      merkle_block: number | null;
-      detection_ids: string[] | null;
-      anomaly_ids: string[] | null;
-      violation_ids: string[] | null;
-      convergence_ids: string[] | null;
-    }>(
+    const rows = await q<CaseDetail>(
       `SELECT * FROM cases WHERE case_id = $1 OR id::text = $1 LIMIT 1`,
       [data.id],
     );

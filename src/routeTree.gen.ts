@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ViolationsRouteImport } from './routes/violations'
+import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as IntelRouteImport } from './routes/intel'
 import { Route as DetectionsRouteImport } from './routes/detections'
 import { Route as CasesRouteImport } from './routes/cases'
@@ -21,6 +22,11 @@ import { Route as CasesCaseIdBriefRouteImport } from './routes/cases.$caseId.bri
 const ViolationsRoute = ViolationsRouteImport.update({
   id: '/violations',
   path: '/violations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperatorsRoute = OperatorsRouteImport.update({
+  id: '/operators',
+  path: '/operators',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IntelRoute = IntelRouteImport.update({
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/cases': typeof CasesRouteWithChildren
   '/detections': typeof DetectionsRoute
   '/intel': typeof IntelRoute
+  '/operators': typeof OperatorsRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/cases': typeof CasesRouteWithChildren
   '/detections': typeof DetectionsRoute
   '/intel': typeof IntelRoute
+  '/operators': typeof OperatorsRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/cases': typeof CasesRouteWithChildren
   '/detections': typeof DetectionsRoute
   '/intel': typeof IntelRoute
+  '/operators': typeof OperatorsRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/cases'
     | '/detections'
     | '/intel'
+    | '/operators'
     | '/violations'
     | '/cases/$caseId'
     | '/cases/$caseId/brief'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/cases'
     | '/detections'
     | '/intel'
+    | '/operators'
     | '/violations'
     | '/cases/$caseId'
     | '/cases/$caseId/brief'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/cases'
     | '/detections'
     | '/intel'
+    | '/operators'
     | '/violations'
     | '/cases/$caseId'
     | '/cases/$caseId/brief'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   CasesRoute: typeof CasesRouteWithChildren
   DetectionsRoute: typeof DetectionsRoute
   IntelRoute: typeof IntelRoute
+  OperatorsRoute: typeof OperatorsRoute
   ViolationsRoute: typeof ViolationsRoute
 }
 
@@ -139,6 +152,13 @@ declare module '@tanstack/react-router' {
       path: '/violations'
       fullPath: '/violations'
       preLoaderRoute: typeof ViolationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operators': {
+      id: '/operators'
+      path: '/operators'
+      fullPath: '/operators'
+      preLoaderRoute: typeof OperatorsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/intel': {
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   CasesRoute: CasesRouteWithChildren,
   DetectionsRoute: DetectionsRoute,
   IntelRoute: IntelRoute,
+  OperatorsRoute: OperatorsRoute,
   ViolationsRoute: ViolationsRoute,
 }
 export const routeTree = rootRouteImport

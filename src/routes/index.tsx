@@ -86,9 +86,9 @@ function Command() {
           tone="orange"
           hint="aoi_alerts // CRITICAL"
         />
-        <Stat label="91.227 Violators" value={fmt(k.low_alt_violators_24h)} icon={TrendingDown} tone="magenta" hint="Low-altitude flagged" />
+        <Stat label="Low Altitude (<500ft)" value={fmt(k.low_alt_24h)} icon={TrendingDown} tone="magenta" hint="Under 500 ft AGL, airborne — 24h" />
         <Stat label="Convergences" value={fmt(k.convergences_24h)} icon={Users} tone="green" />
-        <Stat label="Sentinel Violations" value={fmt(k.violations_24h)} icon={AlertTriangle} tone="orange" />
+        <Stat label="FAA Violations 7d" value={fmt(k.violations_7d)} icon={AlertTriangle} tone="orange" hint="violation_classifications" />
         <Stat label="Active Cases" value={fmt(k.active_cases)} icon={FolderOpen} tone="green" />
       </div>
 

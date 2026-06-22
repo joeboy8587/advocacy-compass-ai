@@ -21,11 +21,11 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
   const rows = await q<Kpis>(`
     SELECT
       (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours') AS detections_24h,
-      (SELECT count(*)::int FROM anomaly_events WHERE created_at > now() - interval '24 hours') AS anomalies_24h,
+      (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,
       (SELECT count(*)::int FROM aoi_alerts WHERE captured_at > now() - interval '24 hours' AND alert_level = 'CRITICAL') AS critical_alerts_24h,
       (SELECT count(*)::int FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN')) AS active_cases,
-      (SELECT count(*)::int FROM sentinel_violations WHERE created_at > now() - interval '24 hours') AS violations_24h,
-      (SELECT count(*)::int FROM convergence_events WHERE created_at > now() - interval '24 hours') AS convergences_24h,
+      (SELECT count(*)::int FROM sentinel_violations WHERE detection_timestamp > now() - interval '24 hours') AS violations_24h,
+      (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
       (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > now() - interval '24 hours') AS unique_aircraft_24h,
       (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours' AND is_91_227_violator = true) AS low_alt_violators_24h
   `);
@@ -155,7 +155,7 @@ export const getHourlyTimeline = createServerFn({ method: "GET" }).handler(async
     SELECT
       h.hour::text AS hour,
       COALESCE((SELECT count(*)::int FROM detections d WHERE d.captured_at >= h.hour AND d.captured_at < h.hour + interval '1 hour'), 0) AS detections,
-      COALESCE((SELECT count(*)::int FROM anomaly_events a WHERE a.created_at >= h.hour AND a.created_at < h.hour + interval '1 hour'), 0) AS anomalies,
+      COALESCE((SELECT count(*)::int FROM anomaly_events a WHERE a.detected_at >= h.hour AND a.detected_at < h.hour + interval '1 hour'), 0) AS anomalies,
       COALESCE((SELECT count(*)::int FROM aoi_alerts al WHERE al.captured_at >= h.hour AND al.captured_at < h.hour + interval '1 hour'), 0) AS alerts
     FROM h
     ORDER BY h.hour

@@ -209,7 +209,7 @@ export const getTopOffenders = createServerFn({ method: "GET" }).handler(async (
   return q<OffenderRow>(`
     SELECT d.icao_hex,
            MAX(d.registration) AS registration,
-           MAX(ap.owner_name) AS owner,
+           MAX(ap.registered_owner) AS owner,
            count(*)::int AS detections_7d,
            sum(CASE WHEN d.is_91_227_violator THEN 1 ELSE 0 END)::int AS low_alt_events,
            string_agg(DISTINCT d.county, ', ') AS counties

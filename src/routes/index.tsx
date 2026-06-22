@@ -1,5 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { useSuspenseQuery, queryOptions, useQuery } from "@tanstack/react-query";
+
+function ClientClock() {
+  const [now, setNow] = useState<string>("");
+  useEffect(() => {
+    const tick = () => setNow(new Date().toUTCString());
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <div suppressHydrationWarning>{now || "\u00a0"}</div>;
+}
 import { Activity, AlertTriangle, FolderOpen, Plane, Radar, Siren, TrendingDown, Users } from "lucide-react";
 import {
   getKpis,
@@ -58,7 +70,7 @@ function Command() {
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground uppercase tracking-widest">
-          <div>{new Date().toUTCString()}</div>
+          <ClientClock />
         </div>
       </header>
 

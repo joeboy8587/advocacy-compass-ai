@@ -9,6 +9,9 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ViolationsRouteImport } from './routes/violations'
+import { Route as RegulationsRouteImport } from './routes/regulations'
+import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as IntelRouteImport } from './routes/intel'
 import { Route as DetectionsRouteImport } from './routes/detections'
 import { Route as CasesRouteImport } from './routes/cases'
@@ -17,6 +20,21 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CasesCaseIdRouteImport } from './routes/cases.$caseId'
 import { Route as CasesCaseIdBriefRouteImport } from './routes/cases.$caseId.brief'
 
+const ViolationsRoute = ViolationsRouteImport.update({
+  id: '/violations',
+  path: '/violations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegulationsRoute = RegulationsRouteImport.update({
+  id: '/regulations',
+  path: '/regulations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperatorsRoute = OperatorsRouteImport.update({
+  id: '/operators',
+  path: '/operators',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IntelRoute = IntelRouteImport.update({
   id: '/intel',
   path: '/intel',
@@ -59,6 +77,9 @@ export interface FileRoutesByFullPath {
   '/cases': typeof CasesRouteWithChildren
   '/detections': typeof DetectionsRoute
   '/intel': typeof IntelRoute
+  '/operators': typeof OperatorsRoute
+  '/regulations': typeof RegulationsRoute
+  '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
 }
@@ -68,6 +89,9 @@ export interface FileRoutesByTo {
   '/cases': typeof CasesRouteWithChildren
   '/detections': typeof DetectionsRoute
   '/intel': typeof IntelRoute
+  '/operators': typeof OperatorsRoute
+  '/regulations': typeof RegulationsRoute
+  '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
 }
@@ -78,6 +102,9 @@ export interface FileRoutesById {
   '/cases': typeof CasesRouteWithChildren
   '/detections': typeof DetectionsRoute
   '/intel': typeof IntelRoute
+  '/operators': typeof OperatorsRoute
+  '/regulations': typeof RegulationsRoute
+  '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
 }
@@ -89,6 +116,9 @@ export interface FileRouteTypes {
     | '/cases'
     | '/detections'
     | '/intel'
+    | '/operators'
+    | '/regulations'
+    | '/violations'
     | '/cases/$caseId'
     | '/cases/$caseId/brief'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +128,9 @@ export interface FileRouteTypes {
     | '/cases'
     | '/detections'
     | '/intel'
+    | '/operators'
+    | '/regulations'
+    | '/violations'
     | '/cases/$caseId'
     | '/cases/$caseId/brief'
   id:
@@ -107,6 +140,9 @@ export interface FileRouteTypes {
     | '/cases'
     | '/detections'
     | '/intel'
+    | '/operators'
+    | '/regulations'
+    | '/violations'
     | '/cases/$caseId'
     | '/cases/$caseId/brief'
   fileRoutesById: FileRoutesById
@@ -117,10 +153,34 @@ export interface RootRouteChildren {
   CasesRoute: typeof CasesRouteWithChildren
   DetectionsRoute: typeof DetectionsRoute
   IntelRoute: typeof IntelRoute
+  OperatorsRoute: typeof OperatorsRoute
+  RegulationsRoute: typeof RegulationsRoute
+  ViolationsRoute: typeof ViolationsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/violations': {
+      id: '/violations'
+      path: '/violations'
+      fullPath: '/violations'
+      preLoaderRoute: typeof ViolationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/regulations': {
+      id: '/regulations'
+      path: '/regulations'
+      fullPath: '/regulations'
+      preLoaderRoute: typeof RegulationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operators': {
+      id: '/operators'
+      path: '/operators'
+      fullPath: '/operators'
+      preLoaderRoute: typeof OperatorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/intel': {
       id: '/intel'
       path: '/intel'
@@ -201,6 +261,9 @@ const rootRouteChildren: RootRouteChildren = {
   CasesRoute: CasesRouteWithChildren,
   DetectionsRoute: DetectionsRoute,
   IntelRoute: IntelRoute,
+  OperatorsRoute: OperatorsRoute,
+  RegulationsRoute: RegulationsRoute,
+  ViolationsRoute: ViolationsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

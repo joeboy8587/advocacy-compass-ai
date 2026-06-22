@@ -11,10 +11,10 @@ export type Kpis = {
   anomalies_24h: number;
   critical_alerts_24h: number;
   active_cases: number;
-  violations_24h: number;
+  violations_7d: number;
   convergences_24h: number;
   unique_aircraft_24h: number;
-  low_alt_violators_24h: number;
+  low_alt_24h: number;
 };
 
 export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
@@ -23,11 +23,11 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
       (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours') AS detections_24h,
       (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,
       (SELECT count(*)::int FROM aoi_alerts WHERE captured_at > now() - interval '24 hours' AND alert_level = 'CRITICAL') AS critical_alerts_24h,
-      (SELECT count(*)::int FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN')) AS active_cases,
-      (SELECT count(*)::int FROM sentinel_violations WHERE detection_timestamp > now() - interval '24 hours') AS violations_24h,
+      (SELECT count(*)::int FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN','CONFIRMED')) AS active_cases,
+      (SELECT count(*)::int FROM violation_classifications WHERE captured_at > now() - interval '7 days') AS violations_7d,
       (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
       (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > now() - interval '24 hours') AS unique_aircraft_24h,
-      (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours' AND is_91_227_violator = true) AS low_alt_violators_24h
+      (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h
   `);
   return rows[0];
 });

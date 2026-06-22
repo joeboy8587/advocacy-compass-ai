@@ -303,3 +303,174 @@ export const getCaseEvidence = createServerFn({ method: "GET" })
       : [];
     return { detections, alerts } as CaseEvidence;
   });
+
+// ---------- Violations (real FAA-classified) ----------
+export type ViolationRow = {
+  detection_id: string;
+  icao_hex: string;
+  registration: string | null;
+  altitude_ft: number | null;
+  speed_kts: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  captured_at: string;
+  rule_violated: string | null;
+  owner_name: string | null;
+  owner_city: string | null;
+  owner_state: string | null;
+  type_registrant: string | null;
+  aircraft_mfr: string | null;
+  aircraft_model: string | null;
+};
+
+export const getViolations = createServerFn({ method: "GET" })
+  .inputValidator((d: { limit?: number; rule?: string; search?: string } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const limit = Math.min(data.limit ?? 200, 1000);
+    const params: unknown[] = [limit];
+    const where: string[] = [];
+    if (data.rule) { params.push(data.rule); where.push(`rule_violated = $${params.length}`); }
+    if (data.search) {
+      params.push(`%${data.search}%`);
+      const i = params.length;
+      where.push(`(owner_name ILIKE $${i} OR registration ILIKE $${i} OR icao_hex ILIKE $${i})`);
+    }
+    const wsql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    return q<ViolationRow>(
+      `SELECT detection_id, icao_hex, registration, altitude_ft, speed_kts, latitude, longitude,
+              captured_at, rule_violated, owner_name, owner_city, owner_state,
+              type_registrant, aircraft_mfr, aircraft_model
+       FROM violation_classifications ${wsql}
+       ORDER BY captured_at DESC
+       LIMIT $1`,
+      params,
+    );
+  });
+
+export type ViolationStat = { rule_violated: string; count: number; unique_aircraft: number };
+export const getViolationStats = createServerFn({ method: "GET" }).handler(async () => {
+  return q<ViolationStat>(`
+    SELECT rule_violated, count(*)::int AS count, count(DISTINCT icao_hex)::int AS unique_aircraft
+    FROM violation_classifications
+    WHERE rule_violated IS NOT NULL
+    GROUP BY rule_violated
+    ORDER BY count DESC
+    LIMIT 25
+  `);
+});
+
+// ---------- Operators (canonical_operator_profiles) ----------
+export type OperatorRow = {
+  icao_hex: string;
+  registration: string | null;
+  faa_registrant_name: string | null;
+  operator_resolved: string | null;
+  aircraft_model: string | null;
+  occurrences_total: number | null;
+  confidence: string | null;
+  last_seen: string | null;
+  kcso_flag: boolean | null;
+  military_flag: boolean | null;
+  medical_flag: boolean | null;
+  xp_services_flag: boolean | null;
+  shell_links: number | null;
+  violation_count: number;
+};
+
+export const getOperators = createServerFn({ method: "GET" })
+  .inputValidator((d: { limit?: number; search?: string; flag?: string } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const limit = Math.min(data.limit ?? 100, 500);
+    const params: unknown[] = [limit];
+    const where: string[] = [];
+    if (data.search) {
+      params.push(`%${data.search}%`);
+      const i = params.length;
+      where.push(`(o.faa_registrant_name ILIKE $${i} OR o.operator_resolved ILIKE $${i} OR o.registration ILIKE $${i} OR o.icao_hex ILIKE $${i})`);
+    }
+    if (data.flag && data.flag !== "ALL") {
+      const col = { KCSO: "kcso_flag", MIL: "military_flag", MED: "medical_flag", XP: "xp_services_flag" }[data.flag];
+      if (col) where.push(`o.${col} = true`);
+    }
+    const wsql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    return q<OperatorRow>(
+      `SELECT o.icao_hex, o.registration, o.faa_registrant_name, o.operator_resolved,
+              o.aircraft_model, o.occurrences_total, o.confidence, o.last_seen::text,
+              o.kcso_flag, o.military_flag, o.medical_flag, o.xp_services_flag, o.shell_links,
+              COALESCE((SELECT count(*)::int FROM violation_classifications v WHERE v.icao_hex = o.icao_hex), 0) AS violation_count
+       FROM canonical_operator_profiles o
+       ${wsql}
+       ORDER BY o.occurrences_total DESC NULLS LAST
+       LIMIT $1`,
+      params,
+    );
+  });
+
+export type RegistryRow = {
+  n_number: string;
+  registrant_name: string | null;
+  registrant_city: string | null;
+  registrant_state: string | null;
+  aircraft_manufacturer: string | null;
+  aircraft_model: string | null;
+  year_manufactured: number | null;
+  status: string | null;
+  mode_s_hex: string | null;
+  registrant_type: string | null;
+};
+
+export const lookupRegistry = createServerFn({ method: "GET" })
+  .inputValidator((d: { q: string }) => d)
+  .handler(async ({ data }) => {
+    const search = `%${data.q}%`;
+    return q<RegistryRow>(
+      `SELECT n_number, registrant_name, registrant_city, registrant_state,
+              aircraft_manufacturer, aircraft_model, year_manufactured, status,
+              mode_s_hex, registrant_type
+       FROM faa_aircraft_registry
+       WHERE n_number ILIKE $1 OR registrant_name ILIKE $1 OR mode_s_hex ILIKE $1
+       ORDER BY registrant_name NULLS LAST
+       LIMIT 50`,
+      [search],
+    );
+  });
+
+// ---------- FAA Regulations ----------
+export type RegulationRow = {
+  id: number;
+  title: string;
+  part: string;
+  section: string;
+  heading: string;
+  content: string | null;
+};
+
+export const getRegulations = createServerFn({ method: "GET" })
+  .inputValidator((d: { part?: string; search?: string } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (data.part) { params.push(data.part); where.push(`part = $${params.length}`); }
+    if (data.search) {
+      params.push(`%${data.search}%`);
+      const i = params.length;
+      where.push(`(heading ILIKE $${i} OR section ILIKE $${i} OR content ILIKE $${i})`);
+    }
+    const wsql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    return q<RegulationRow>(
+      `SELECT id, title, part, section, heading, content
+       FROM faa_regulations ${wsql}
+       ORDER BY part::text, section
+       LIMIT 200`,
+      params,
+    );
+  });
+
+export const getRegulationParts = createServerFn({ method: "GET" }).handler(async () => {
+  return q<{ part: string; count: number }>(`
+    SELECT part, count(*)::int AS count
+    FROM faa_regulations
+    GROUP BY part
+    ORDER BY count DESC
+  `);
+});

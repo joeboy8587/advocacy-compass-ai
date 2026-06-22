@@ -58,7 +58,7 @@ function Command() {
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground uppercase tracking-widest">
-          <div>{new Date().toUTCString()}</div>
+          <ClientClock />
         </div>
       </header>
 

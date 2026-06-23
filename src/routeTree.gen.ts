@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ViolationsRouteImport } from './routes/violations'
 import { Route as SpoofingRouteImport } from './routes/spoofing'
+import { Route as ScreenshotsRouteImport } from './routes/screenshots'
 import { Route as RegulationsRouteImport } from './routes/regulations'
 import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as IntelRouteImport } from './routes/intel'
@@ -31,6 +32,11 @@ const ViolationsRoute = ViolationsRouteImport.update({
 const SpoofingRoute = SpoofingRouteImport.update({
   id: '/spoofing',
   path: '/spoofing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScreenshotsRoute = ScreenshotsRouteImport.update({
+  id: '/screenshots',
+  path: '/screenshots',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegulationsRoute = RegulationsRouteImport.update({
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/intel': typeof IntelRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
+  '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/intel': typeof IntelRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
+  '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/intel': typeof IntelRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
+  '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/intel'
     | '/operators'
     | '/regulations'
+    | '/screenshots'
     | '/spoofing'
     | '/violations'
     | '/cases/$caseId'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/intel'
     | '/operators'
     | '/regulations'
+    | '/screenshots'
     | '/spoofing'
     | '/violations'
     | '/cases/$caseId'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/intel'
     | '/operators'
     | '/regulations'
+    | '/screenshots'
     | '/spoofing'
     | '/violations'
     | '/cases/$caseId'
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   IntelRoute: typeof IntelRoute
   OperatorsRoute: typeof OperatorsRoute
   RegulationsRoute: typeof RegulationsRoute
+  ScreenshotsRoute: typeof ScreenshotsRoute
   SpoofingRoute: typeof SpoofingRoute
   ViolationsRoute: typeof ViolationsRoute
 }
@@ -211,6 +224,13 @@ declare module '@tanstack/react-router' {
       path: '/spoofing'
       fullPath: '/spoofing'
       preLoaderRoute: typeof SpoofingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/screenshots': {
+      id: '/screenshots'
+      path: '/screenshots'
+      fullPath: '/screenshots'
+      preLoaderRoute: typeof ScreenshotsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/regulations': {
@@ -325,6 +345,7 @@ const rootRouteChildren: RootRouteChildren = {
   IntelRoute: IntelRoute,
   OperatorsRoute: OperatorsRoute,
   RegulationsRoute: RegulationsRoute,
+  ScreenshotsRoute: ScreenshotsRoute,
   SpoofingRoute: SpoofingRoute,
   ViolationsRoute: ViolationsRoute,
 }

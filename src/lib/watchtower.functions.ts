@@ -248,7 +248,8 @@ export const getRecentAlerts = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const limit = Math.min(data.limit ?? 200, 1000);
     const params: unknown[] = [limit];
-    const where: string[] = [];
+    // Always bound by recent window so the LATERAL detection lookup stays fast.
+    const where: string[] = [`a.captured_at > now() - interval '14 days'`];
     if (data.level) {
       params.push(data.level);
       where.push(`a.alert_level = $${params.length}`);
@@ -264,7 +265,7 @@ export const getRecentAlerts = createServerFn({ method: "GET" })
         `(a.registration ILIKE $${i} OR a.icao_hex ILIKE $${i} OR o.faa_registrant_name ILIKE $${i} OR o.operator_resolved ILIKE $${i})`,
       );
     }
-    const wsql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const wsql = `WHERE ${where.join(" AND ")}`;
     return q<AlertRow>(
       `SELECT a.id, a.icao_hex, a.registration, a.altitude_ft, a.distance_mi,
               a.captured_at, a.alert_level, a.reason, a.sha256_hash,
@@ -276,7 +277,10 @@ export const getRecentAlerts = createServerFn({ method: "GET" })
        LEFT JOIN canonical_operator_profiles o ON o.icao_hex = a.icao_hex
        LEFT JOIN LATERAL (
          SELECT d.county FROM detections d
-         WHERE d.icao_hex = a.icao_hex AND d.county IS NOT NULL
+         WHERE d.icao_hex = a.icao_hex
+           AND d.county IS NOT NULL
+           AND d.captured_at BETWEEN a.captured_at - interval '2 hours'
+                                 AND a.captured_at + interval '2 hours'
          ORDER BY abs(extract(epoch from (d.captured_at - a.captured_at))) ASC
          LIMIT 1
        ) det ON true
@@ -289,17 +293,17 @@ export const getRecentAlerts = createServerFn({ method: "GET" })
 
 export const getAlertCounties = createServerFn({ method: "GET" }).handler(async () => {
   return q<{ county: string; count: number }>(`
-    SELECT det.county, count(DISTINCT a.id)::int AS count
+    SELECT d.county, count(DISTINCT a.id)::int AS count
     FROM aoi_alerts a
-    JOIN LATERAL (
-      SELECT d.county FROM detections d
-      WHERE d.icao_hex = a.icao_hex AND d.county IS NOT NULL
-      ORDER BY abs(extract(epoch from (d.captured_at - a.captured_at))) ASC
-      LIMIT 1
-    ) det ON true
-    WHERE a.captured_at > now() - interval '30 days'
-    GROUP BY det.county
+    JOIN detections d
+      ON d.icao_hex = a.icao_hex
+     AND d.county IS NOT NULL
+     AND d.captured_at BETWEEN a.captured_at - interval '2 hours'
+                           AND a.captured_at + interval '2 hours'
+    WHERE a.captured_at > now() - interval '14 days'
+    GROUP BY d.county
     ORDER BY count DESC
+    LIMIT 50
   `);
 });
 

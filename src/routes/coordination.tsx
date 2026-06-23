@@ -7,7 +7,7 @@ import {
   getRecentCoordinatedHypotheses,
   getIncursionFeed,
 } from "@/lib/watchtower.functions";
-import { AppShell } from "@/components/AppShell";
+
 
 export const Route = createFileRoute("/coordination")({
   head: () => ({
@@ -42,7 +42,7 @@ function CoordinationPage() {
   });
 
   return (
-    <AppShell>
+    
       <div className="p-6 space-y-6">
         <header>
           <h1 className="text-2xl neon-text-green flex items-center gap-2">
@@ -173,7 +173,7 @@ function CoordinationPage() {
           </div>
         </section>
       </div>
-    </AppShell>
+    
   );
 }
 

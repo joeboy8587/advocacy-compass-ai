@@ -6,7 +6,7 @@ import {
   getSpoofingBreakdown,
   getTopSpoofers,
 } from "@/lib/watchtower.functions";
-import { AppShell } from "@/components/AppShell";
+
 import { useState } from "react";
 
 export const Route = createFileRoute("/spoofing")({
@@ -40,7 +40,7 @@ function SpoofingPage() {
   const types = ["", "SPOOFING_SIGNAL", "MASKED_ALTITUDE", "IMPOSSIBLE_PHYSICS", "SURVEILLANCE_MASKING"];
 
   return (
-    <AppShell>
+    
       <div className="p-6 space-y-6">
         <header>
           <h1 className="text-2xl neon-text-orange flex items-center gap-2">
@@ -150,7 +150,7 @@ function SpoofingPage() {
           </section>
         </div>
       </div>
-    </AppShell>
+    
   );
 }
 

@@ -12,7 +12,7 @@ function ClientClock() {
   }, []);
   return <div suppressHydrationWarning>{now || "\u00a0"}</div>;
 }
-import { Activity, AlertTriangle, FolderOpen, Plane, Radar, Siren, TrendingDown, Users } from "lucide-react";
+import { Activity, AlertTriangle, FolderOpen, Plane, Radar, Siren, TrendingDown, Users, ShieldAlert, Network } from "lucide-react";
 import {
   getKpis,
   getRecentAlerts,
@@ -89,6 +89,10 @@ function Command() {
         <Stat label="Low Altitude (<500ft)" value={fmt(k.low_alt_24h)} icon={TrendingDown} tone="magenta" hint="Under 500 ft AGL, airborne — 24h" />
         <Stat label="Convergences" value={fmt(k.convergences_24h)} icon={Users} tone="green" />
         <Stat label="FAA Violations 7d" value={fmt(k.violations_7d)} icon={AlertTriangle} tone="orange" hint="violation_classifications" />
+        <Stat label="Spoofing 24h" value={fmt(k.spoofing_24h)} icon={ShieldAlert} tone="orange" hint="ml_anomaly_detections SPOOFING_SIGNAL" />
+        <Stat label="Masked Altitude 24h" value={fmt(k.masked_alt_24h)} icon={ShieldAlert} tone="magenta" hint="MASKED_ALTITUDE anomalies" />
+        <Stat label="Coordination Locks" value={fmt(k.coordination_locks)} icon={Network} tone="green" hint="wtpr_convergent_locks confirmed" />
+        <Stat label="Incursions 7d" value={fmt(k.incursions_7d)} icon={TrendingDown} tone="orange" hint="first-time floor breaks" />
         <Stat label="Active Cases" value={fmt(k.active_cases)} icon={FolderOpen} tone="green" />
       </div>
 

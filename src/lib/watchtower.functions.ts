@@ -15,6 +15,10 @@ export type Kpis = {
   convergences_24h: number;
   unique_aircraft_24h: number;
   low_alt_24h: number;
+  spoofing_24h: number;
+  masked_alt_24h: number;
+  coordination_locks: number;
+  incursions_7d: number;
 };
 
 export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
@@ -27,9 +31,162 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
       (SELECT count(*)::int FROM violation_classifications WHERE captured_at > now() - interval '7 days') AS violations_7d,
       (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
       (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > now() - interval '24 hours') AS unique_aircraft_24h,
-      (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h
+      (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h,
+      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > now() - interval '24 hours' AND anomaly_type = 'SPOOFING_SIGNAL') AS spoofing_24h,
+      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > now() - interval '24 hours' AND anomaly_type = 'MASKED_ALTITUDE') AS masked_alt_24h,
+      (SELECT count(*)::int FROM wtpr_convergent_locks WHERE machine_confirmed = true) AS coordination_locks,
+      (SELECT count(*)::int FROM incursion_events WHERE event_timestamp > now() - interval '7 days') AS incursions_7d
   `);
   return rows[0];
+});
+
+// ---------- Spoofing analysis ----------
+export type SpoofEvent = {
+  id: string;
+  detected_at: string;
+  aircraft_registration: string | null;
+  icao24: string | null;
+  callsign: string | null;
+  anomaly_type: string;
+  anomaly_score: string | null;
+  confidence_level: string | null;
+  county: string | null;
+  features: string | null;
+};
+
+export const getSpoofingFeed = createServerFn({ method: "GET" })
+  .inputValidator((d: { limit?: number; type?: string } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const limit = Math.min(data.limit ?? 60, 200);
+    const params: unknown[] = [limit];
+    let where = `anomaly_type IN ('SPOOFING_SIGNAL','MASKED_ALTITUDE','IMPOSSIBLE_PHYSICS','SURVEILLANCE_MASKING')`;
+    if (data.type) {
+      params.push(data.type);
+      where = `anomaly_type = $${params.length}`;
+    }
+    return q<SpoofEvent>(
+      `SELECT id, detected_at, aircraft_registration, icao24, callsign, anomaly_type,
+              anomaly_score, confidence_level, county, features::text AS features
+         FROM ml_anomaly_detections
+        WHERE ${where}
+        ORDER BY detected_at DESC NULLS LAST
+        LIMIT $1`,
+      params,
+    );
+  });
+
+export const getSpoofingBreakdown = createServerFn({ method: "GET" }).handler(async () => {
+  return q<{ anomaly_type: string; n: number; avg_score: string; aircraft: number }>(`
+    SELECT anomaly_type,
+           count(*)::int AS n,
+           ROUND(AVG(anomaly_score)::numeric, 2)::text AS avg_score,
+           count(DISTINCT icao24)::int AS aircraft
+      FROM ml_anomaly_detections
+     WHERE detected_at > now() - interval '7 days'
+       AND anomaly_type IN ('SPOOFING_SIGNAL','MASKED_ALTITUDE','IMPOSSIBLE_PHYSICS','SURVEILLANCE_MASKING','CALIBRATION_ERROR')
+     GROUP BY anomaly_type
+     ORDER BY n DESC
+  `);
+});
+
+export const getTopSpoofers = createServerFn({ method: "GET" }).handler(async () => {
+  return q<{
+    aircraft_registration: string | null;
+    icao24: string | null;
+    county: string | null;
+    spoof_events: number;
+    masked_events: number;
+    last_seen: string;
+  }>(`
+    SELECT aircraft_registration,
+           icao24,
+           MAX(county) AS county,
+           count(*) FILTER (WHERE anomaly_type = 'SPOOFING_SIGNAL')::int AS spoof_events,
+           count(*) FILTER (WHERE anomaly_type = 'MASKED_ALTITUDE')::int AS masked_events,
+           MAX(detected_at) AS last_seen
+      FROM ml_anomaly_detections
+     WHERE detected_at > now() - interval '30 days'
+       AND anomaly_type IN ('SPOOFING_SIGNAL','MASKED_ALTITUDE')
+     GROUP BY aircraft_registration, icao24
+     ORDER BY spoof_events DESC, masked_events DESC
+     LIMIT 25
+  `);
+});
+
+// ---------- Coordination / Handoffs ----------
+export type CoordinationLock = {
+  id: number;
+  main_wtpr: string;
+  nb_wtpr: string;
+  correlation_score: string;
+  p_value: string;
+  finding_type: string;
+  machine_confirmed: boolean;
+  created_at: string;
+};
+
+export const getCoordinationLocks = createServerFn({ method: "GET" })
+  .inputValidator((d: { limit?: number } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const limit = Math.min(data.limit ?? 80, 300);
+    return q<CoordinationLock>(
+      `SELECT id, main_wtpr, nb_wtpr, correlation_score, p_value, finding_type, machine_confirmed, created_at
+         FROM wtpr_convergent_locks
+        ORDER BY correlation_score DESC, created_at DESC
+        LIMIT $1`,
+      [limit],
+    );
+  });
+
+export const getHandoffHypotheses = createServerFn({ method: "GET" }).handler(async () => {
+  return q<{ hypothesis_type: string; n: number; avg_conf: string }>(`
+    SELECT hypothesis_type,
+           count(*)::int AS n,
+           ROUND(AVG(confidence_score)::numeric, 3)::text AS avg_conf
+      FROM mission_hypotheses
+     WHERE hypothesis_type IN (
+        'COORDINATED_SURVEILLANCE','STARING_PATTERN','PERSISTENT_REGIONAL_ANCHOR',
+        'GHOST_LAYER_ASSET','RANDOMIZED_LOITER_TACTIC','CONTRACT_ISR_NODE',
+        'DIGITAL_CHAMELEON_SIGNATURE','FROZEN_ALTITUDE_SPOOF','IDENTITY_OBFUSCATION'
+     )
+     GROUP BY hypothesis_type
+     ORDER BY n DESC
+  `);
+});
+
+export const getRecentCoordinatedHypotheses = createServerFn({ method: "GET" }).handler(async () => {
+  return q<{
+    id: string;
+    detection_id: string;
+    hypothesis_type: string;
+    confidence_score: string;
+    reasoning_chain: string;
+    updated_at: string;
+  }>(`
+    SELECT id, detection_id, hypothesis_type, confidence_score, reasoning_chain, updated_at
+      FROM mission_hypotheses
+     WHERE hypothesis_type IN ('COORDINATED_SURVEILLANCE','STARING_PATTERN','GHOST_LAYER_ASSET','CONTRACT_ISR_NODE')
+       AND confidence_score >= 0.8
+     ORDER BY updated_at DESC NULLS LAST
+     LIMIT 40
+  `);
+});
+
+export const getIncursionFeed = createServerFn({ method: "GET" }).handler(async () => {
+  return q<{
+    id: string;
+    icao_hex: string;
+    registration: string;
+    event_timestamp: string;
+    altitude_ft: number;
+    prev_min_alt: number;
+    reasoning: string;
+  }>(`
+    SELECT id, icao_hex, registration, event_timestamp, altitude_ft, prev_min_alt, reasoning
+      FROM incursion_events
+     ORDER BY event_timestamp DESC
+     LIMIT 50
+  `);
 });
 
 // ---------- Recent Alerts ----------

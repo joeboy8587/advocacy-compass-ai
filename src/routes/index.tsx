@@ -12,7 +12,7 @@ function ClientClock() {
   }, []);
   return <div suppressHydrationWarning>{now || "\u00a0"}</div>;
 }
-import { Activity, AlertTriangle, FolderOpen, Plane, Radar, Siren, TrendingDown, Users } from "lucide-react";
+import { Activity, AlertTriangle, FolderOpen, Plane, Radar, Siren, TrendingDown, Users, ShieldAlert, Network } from "lucide-react";
 import {
   getKpis,
   getRecentAlerts,

@@ -12,7 +12,7 @@ const nav = [
   { to: "/detections", label: "Detections", icon: Radio },
   { to: "/operators", label: "Operators", icon: Users },
   { to: "/regulations", label: "Regulations", icon: BookOpen },
-  { to: "/intel", label: "AI Investigator", icon: Brain },
+  { to: "/intel", label: "Josiah", icon: Brain },
 ] as const;
 
 function StatusPill() {

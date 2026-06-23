@@ -232,26 +232,76 @@ export type AlertRow = {
   alert_level: string;
   reason: string | null;
   sha256_hash: string | null;
+  operator_name: string | null;
+  aircraft_model: string | null;
+  kcso_flag: boolean | null;
+  military_flag: boolean | null;
+  medical_flag: boolean | null;
+  xp_services_flag: boolean | null;
+  county: string | null;
 };
 
 export const getRecentAlerts = createServerFn({ method: "GET" })
-  .inputValidator((d: { limit?: number; level?: string } | undefined) => d ?? {})
+  .inputValidator(
+    (d: { limit?: number; level?: string; county?: string; search?: string } | undefined) => d ?? {},
+  )
   .handler(async ({ data }) => {
-    const limit = Math.min(data.limit ?? 50, 200);
+    const limit = Math.min(data.limit ?? 200, 1000);
     const params: unknown[] = [limit];
-    let where = "";
+    const where: string[] = [];
     if (data.level) {
-      where = "WHERE alert_level = $2";
       params.push(data.level);
+      where.push(`a.alert_level = $${params.length}`);
     }
+    if (data.county && data.county !== "ALL") {
+      params.push(data.county);
+      where.push(`det.county = $${params.length}`);
+    }
+    if (data.search && data.search.trim()) {
+      params.push(`%${data.search.trim()}%`);
+      const i = params.length;
+      where.push(
+        `(a.registration ILIKE $${i} OR a.icao_hex ILIKE $${i} OR o.faa_registrant_name ILIKE $${i} OR o.operator_resolved ILIKE $${i})`,
+      );
+    }
+    const wsql = where.length ? `WHERE ${where.join(" AND ")}` : "";
     return q<AlertRow>(
-      `SELECT id, icao_hex, registration, altitude_ft, distance_mi, captured_at, alert_level, reason, sha256_hash
-       FROM aoi_alerts ${where}
-       ORDER BY captured_at DESC NULLS LAST
+      `SELECT a.id, a.icao_hex, a.registration, a.altitude_ft, a.distance_mi,
+              a.captured_at, a.alert_level, a.reason, a.sha256_hash,
+              COALESCE(o.operator_resolved, o.faa_registrant_name) AS operator_name,
+              o.aircraft_model,
+              o.kcso_flag, o.military_flag, o.medical_flag, o.xp_services_flag,
+              det.county
+       FROM aoi_alerts a
+       LEFT JOIN canonical_operator_profiles o ON o.icao_hex = a.icao_hex
+       LEFT JOIN LATERAL (
+         SELECT d.county FROM detections d
+         WHERE d.icao_hex = a.icao_hex AND d.county IS NOT NULL
+         ORDER BY abs(extract(epoch from (d.captured_at - a.captured_at))) ASC
+         LIMIT 1
+       ) det ON true
+       ${wsql}
+       ORDER BY a.captured_at DESC NULLS LAST
        LIMIT $1`,
       params,
     );
   });
+
+export const getAlertCounties = createServerFn({ method: "GET" }).handler(async () => {
+  return q<{ county: string; count: number }>(`
+    SELECT det.county, count(DISTINCT a.id)::int AS count
+    FROM aoi_alerts a
+    JOIN LATERAL (
+      SELECT d.county FROM detections d
+      WHERE d.icao_hex = a.icao_hex AND d.county IS NOT NULL
+      ORDER BY abs(extract(epoch from (d.captured_at - a.captured_at))) ASC
+      LIMIT 1
+    ) det ON true
+    WHERE a.captured_at > now() - interval '30 days'
+    GROUP BY det.county
+    ORDER BY count DESC
+  `);
+});
 
 // ---------- Top Cases ----------
 export type CaseRow = {

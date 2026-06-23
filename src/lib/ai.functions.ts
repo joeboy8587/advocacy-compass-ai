@@ -151,11 +151,14 @@ export const askInvestigator = createServerFn({ method: "POST" })
 
     const context = await gatherContext();
 
+    const { fetchDoctrineContext } = await import("./doctrine.functions");
+    const doctrine = await fetchDoctrineContext(data.question, 3);
+
     try {
       const { text } = await generateText({
         model: gateway(MODEL),
         system,
-        prompt: `# Live Corpus Context\n\n${context}${extra}\n\n---\n\n# Operator Question (mode: ${mode})\n\n${data.question}`,
+        prompt: `# Live Corpus Context\n\n${context}${extra}${doctrine ? `\n\n# Doctrine Library (uploaded reference documents)\n\n${doctrine}` : ""}\n\n---\n\n# Operator Question (mode: ${mode})\n\n${data.question}`,
       });
       return { ok: true as const, text, mode };
     } catch (e) {

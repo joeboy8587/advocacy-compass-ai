@@ -171,7 +171,7 @@ export const matchScreenshot = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; window_seconds?: number }) => d)
   .handler(async ({ data }) => {
     await ensureSchema();
-    const win = Math.min(Math.max(data.window_seconds ?? 600, 30), 7200);
+    const win = Math.min(Math.max(data.window_seconds ?? 600, 30), 86400);
     const shotRows = await q<{
       id: string;
       exif_taken_at: string | null;

@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search } from "lucide-react";
+import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search, Pencil, Save, X } from "lucide-react";
 import { Fragment, useState } from "react";
 // exifr is dynamically imported inside handleFiles to avoid SSR/hydration issues
 import {
   uploadScreenshot,
   listScreenshots,
   matchScreenshot,
+  updateScreenshot,
   deleteScreenshot,
   type DetectionMatch,
 } from "@/lib/screenshots.functions";
@@ -20,7 +21,8 @@ type ParsedFile = {
   file: File;
   sha256: string;
   dataUrl: string;
-  exifTakenAt: string | null; // UTC ISO
+  exifNaiveLocal: string | null; // "YYYY-MM-DD HH:MM:SS" as written by camera, no TZ
+  exifTakenAt: string | null; // UTC ISO derived from naive + tzOffsetMin
   rawExif: Record<string, unknown> | null;
   tail: string;
   icaoHex: string;
@@ -28,9 +30,37 @@ type ParsedFile = {
   aircraftType: string;
   altitude: string;
   groundspeed: string;
-  tzOffsetMin: number; // user-selected offset applied to naive EXIF time
+  tzOffsetMin: number; // minutes east of UTC; PDT = -420
   notes: string;
 };
+
+// Build a UTC ISO from a naive local "YYYY-MM-DD HH:MM:SS" string + a tz offset
+// in minutes (PDT = -420 → UTC = local + 420 min). This bypasses the browser TZ
+// entirely so the same screenshot resolves to the same UTC no matter where it's processed.
+function naiveLocalToUtcIso(naive: string | null, tzOffsetMin: number): string | null {
+  if (!naive) return null;
+  const m = naive.match(/(\d{4})\D(\d{1,2})\D(\d{1,2})[ T](\d{1,2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, hh, mm, ss] = m;
+  const utcMs = Date.UTC(+y, +mo - 1, +d, +hh, +mm, +ss) - tzOffsetMin * 60_000;
+  return new Date(utcMs).toISOString();
+}
+
+// Extract a "YYYY-MM-DD HH:MM:SS" naive local string from whatever exifr returned.
+function naiveFromExifValue(v: unknown): string | null {
+  if (!v) return null;
+  if (typeof v === "string") {
+    // EXIF spec format is "YYYY:MM:DD HH:MM:SS"
+    return v.replace(":", "-").replace(":", "-");
+  }
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    // exifr parsed the naive EXIF as if it were UTC. Re-extract UTC fields as the naive components.
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${v.getUTCFullYear()}-${pad(v.getUTCMonth() + 1)}-${pad(v.getUTCDate())} ${pad(v.getUTCHours())}:${pad(v.getUTCMinutes())}:${pad(v.getUTCSeconds())}`;
+  }
+  return null;
+}
+
 
 async function sha256Hex(buf: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", buf);
@@ -62,6 +92,16 @@ function ScreenshotsPage() {
   const [busy, setBusy] = useState(false);
   const [matches, setMatches] = useState<Record<string, { status: string; matches: DetectionMatch[] }>>({});
   const [matchingId, setMatchingId] = useState<string | null>(null);
+  const [windowMin, setWindowMin] = useState(15); // ± minutes for re-match
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    tail: string;
+    icaoHex: string;
+    operator: string;
+    aircraftType: string;
+    tzOffsetMin: number;
+    naiveLocal: string;
+  } | null>(null);
 
   const list = useQuery({
     queryKey: ["screenshots", search],
@@ -87,31 +127,24 @@ function ScreenshotsPage() {
       const sha = await sha256Hex(buf);
       const dataUrl = await readDataUrl(file);
       let raw: Record<string, unknown> | null = null;
-      let takenAt: Date | null = null;
+      let naiveLocal: string | null = null;
       try {
         const exifr = (await import("exifr")).default;
         raw = (await exifr.parse(file, { tiff: true, exif: true, gps: true })) ?? null;
-        const candidate =
-          (raw?.DateTimeOriginal as Date | undefined) ||
-          (raw?.CreateDate as Date | undefined) ||
-          (raw?.ModifyDate as Date | undefined) ||
-          null;
-        if (candidate instanceof Date && !Number.isNaN(candidate.getTime())) {
-          takenAt = candidate;
-        }
+        naiveLocal =
+          naiveFromExifValue(raw?.DateTimeOriginal) ||
+          naiveFromExifValue(raw?.CreateDate) ||
+          naiveFromExifValue(raw?.ModifyDate);
       } catch {
         /* no exif */
       }
-      // EXIF dates from cameras are naive local time. Apply tz offset.
-      let isoUtc: string | null = null;
-      if (takenAt) {
-        const adjusted = new Date(takenAt.getTime() - defaultTzMin * 60_000);
-        isoUtc = adjusted.toISOString();
-      }
+      // Camera writes naive local time (no TZ). Convert with user-selected offset.
+      const isoUtc = naiveLocalToUtcIso(naiveLocal, defaultTzMin);
       next.push({
         file,
         sha256: sha,
         dataUrl,
+        exifNaiveLocal: naiveLocal,
         exifTakenAt: isoUtc,
         rawExif: raw,
         tail: guessTail(file.name),
@@ -168,12 +201,61 @@ function ScreenshotsPage() {
   async function runMatch(id: string) {
     setMatchingId(id);
     try {
-      const m = await matchScreenshot({ data: { id, window_seconds: 900 } });
+      const m = await matchScreenshot({ data: { id, window_seconds: windowMin * 60 } });
       setMatches((prev) => ({ ...prev, [id]: m }));
       qc.invalidateQueries({ queryKey: ["screenshots"] });
     } finally {
       setMatchingId(null);
     }
+  }
+
+  function startEdit(s: {
+    id: string;
+    tail: string | null;
+    icao_hex: string | null;
+    operator: string | null;
+    aircraft_type: string | null;
+    exif_taken_at: string | null;
+    tz_offset_min: number | null;
+  }) {
+    // Derive naive local from current stored UTC + stored offset (best-effort).
+    let naive = "";
+    if (s.exif_taken_at) {
+      const off = s.tz_offset_min ?? defaultTzMin;
+      const local = new Date(new Date(s.exif_taken_at).getTime() + off * 60_000);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      naive = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}`;
+    }
+    setEditId(s.id);
+    setEditDraft({
+      tail: s.tail ?? "",
+      icaoHex: s.icao_hex ?? "",
+      operator: s.operator ?? "",
+      aircraftType: s.aircraft_type ?? "",
+      tzOffsetMin: s.tz_offset_min ?? defaultTzMin,
+      naiveLocal: naive,
+    });
+  }
+
+  async function saveEdit() {
+    if (!editId || !editDraft) return;
+    const isoUtc = naiveLocalToUtcIso(editDraft.naiveLocal || null, editDraft.tzOffsetMin);
+    await updateScreenshot({
+      data: {
+        id: editId,
+        tail: editDraft.tail || null,
+        icao_hex: editDraft.icaoHex || null,
+        operator: editDraft.operator || null,
+        aircraft_type: editDraft.aircraftType || null,
+        exif_taken_at: isoUtc,
+        tz_offset_min: editDraft.tzOffsetMin,
+      },
+    });
+    const id = editId;
+    setEditId(null);
+    setEditDraft(null);
+    await qc.invalidateQueries({ queryKey: ["screenshots"] });
+    await runMatch(id);
   }
 
   return (
@@ -239,8 +321,11 @@ function ScreenshotsPage() {
                   <span className="font-mono text-muted-foreground" title={p.sha256}>
                     sha256:{p.sha256.slice(0, 16)}…
                   </span>
-                  {p.exifTakenAt ? (
-                    <span className="text-accent">EXIF → {new Date(p.exifTakenAt).toISOString()} (UTC)</span>
+                  {p.exifNaiveLocal ? (
+                    <>
+                      <span className="text-muted-foreground">camera local {p.exifNaiveLocal}</span>
+                      <span className="text-accent">→ UTC {p.exifTakenAt ? new Date(p.exifTakenAt).toISOString().replace("T", " ").slice(0, 19) : "—"}</span>
+                    </>
                   ) : (
                     <span className="text-primary flex items-center gap-1">
                       <AlertTriangle className="size-3" /> No EXIF timestamp
@@ -266,22 +351,22 @@ function ScreenshotsPage() {
                   <Field label="Aircraft">
                     <input value={p.aircraftType} onChange={(e) => updateParsed(i, { aircraftType: e.target.value })} placeholder="Airbus H125" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
-                  <Field label="Screenshot TZ offset (min)">
-                    <input
+                  <Field label="Screenshot TZ (camera local)">
+                    <select
                       value={p.tzOffsetMin}
-                      type="number"
                       onChange={(e) => {
                         const newOffset = Number(e.target.value);
-                        // re-derive UTC from the original local EXIF time if we have raw
-                        const original = (p.rawExif?.DateTimeOriginal as Date | undefined) ||
-                          (p.rawExif?.CreateDate as Date | undefined) || null;
-                        const iso = original instanceof Date
-                          ? new Date(original.getTime() - newOffset * 60_000).toISOString()
-                          : p.exifTakenAt;
+                        const iso = naiveLocalToUtcIso(p.exifNaiveLocal, newOffset);
                         updateParsed(i, { tzOffsetMin: newOffset, exifTakenAt: iso });
                       }}
                       className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent"
-                    />
+                    >
+                      <option value={-420}>PDT (UTC−7)</option>
+                      <option value={-480}>PST (UTC−8)</option>
+                      <option value={-360}>MDT (UTC−6)</option>
+                      <option value={-300}>EDT (UTC−5)</option>
+                      <option value={0}>UTC</option>
+                    </select>
                   </Field>
                   <Field label="Notes">
                     <input value={p.notes} onChange={(e) => updateParsed(i, { notes: e.target.value })} placeholder="…" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
@@ -312,14 +397,30 @@ function ScreenshotsPage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-xs uppercase tracking-widest text-accent">Vault · {list.data?.length ?? 0} screenshots</h2>
-          <div className="flex items-center gap-1 border border-border rounded-sm bg-secondary/30 px-2">
-            <Search className="size-3 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tail / ICAO / operator / filename"
-              className="bg-transparent text-xs px-1 py-1 w-72 outline-none placeholder:text-muted-foreground/60"
-            />
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+              Match window ±
+              <select
+                value={windowMin}
+                onChange={(e) => setWindowMin(Number(e.target.value))}
+                className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs"
+              >
+                <option value={5}>5 min</option>
+                <option value={15}>15 min</option>
+                <option value={60}>1 hr</option>
+                <option value={360}>6 hr</option>
+                <option value={1440}>24 hr</option>
+              </select>
+            </label>
+            <div className="flex items-center gap-1 border border-border rounded-sm bg-secondary/30 px-2">
+              <Search className="size-3 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tail / ICAO / operator / filename"
+                className="bg-transparent text-xs px-1 py-1 w-72 outline-none placeholder:text-muted-foreground/60"
+              />
+            </div>
           </div>
         </div>
 
@@ -369,6 +470,13 @@ function ScreenshotsPage() {
                         {matchingId === s.id ? "Matching…" : "Re-match"}
                       </button>
                       <button
+                        onClick={() => startEdit(s)}
+                        className="text-muted-foreground hover:text-accent mr-2"
+                        title="Edit identity / timestamp"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                      <button
                         onClick={() => del.mutate({ data: { id: s.id } })}
                         className="text-muted-foreground hover:text-primary"
                         title="Delete"
@@ -377,11 +485,58 @@ function ScreenshotsPage() {
                       </button>
                     </td>
                   </tr>
+                  {editId === s.id && editDraft ? (
+                    <tr key={s.id + "-edit"} className="bg-secondary/20">
+                      <td colSpan={8} className="py-3 px-3">
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs items-end">
+                          <Field label="Tail">
+                            <input value={editDraft.tail} onChange={(e) => setEditDraft({ ...editDraft, tail: e.target.value.toUpperCase() })} placeholder="N913KC" className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="ICAO Hex">
+                            <input value={editDraft.icaoHex} onChange={(e) => setEditDraft({ ...editDraft, icaoHex: e.target.value.toLowerCase() })} placeholder="aca2b4" className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Operator">
+                            <input value={editDraft.operator} onChange={(e) => setEditDraft({ ...editDraft, operator: e.target.value })} className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Aircraft">
+                            <input value={editDraft.aircraftType} onChange={(e) => setEditDraft({ ...editDraft, aircraftType: e.target.value })} className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Camera local (YYYY-MM-DD HH:MM:SS)">
+                            <input value={editDraft.naiveLocal} onChange={(e) => setEditDraft({ ...editDraft, naiveLocal: e.target.value })} placeholder="2026-06-21 01:55:00" className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Camera TZ">
+                            <select
+                              value={editDraft.tzOffsetMin}
+                              onChange={(e) => setEditDraft({ ...editDraft, tzOffsetMin: Number(e.target.value) })}
+                              className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs"
+                            >
+                              <option value={-420}>PDT (UTC−7)</option>
+                              <option value={-480}>PST (UTC−8)</option>
+                              <option value={-360}>MDT (UTC−6)</option>
+                              <option value={-300}>EDT (UTC−5)</option>
+                              <option value={0}>UTC</option>
+                            </select>
+                          </Field>
+                        </div>
+                        <div className="mt-2 flex items-center gap-3 text-[11px]">
+                          <span className="text-muted-foreground">
+                            → UTC {naiveLocalToUtcIso(editDraft.naiveLocal || null, editDraft.tzOffsetMin)?.replace("T", " ").slice(0, 19) ?? "—"}
+                          </span>
+                          <button onClick={saveEdit} className="ml-auto px-3 py-1 text-[11px] uppercase tracking-widest bg-primary text-primary-foreground rounded-sm inline-flex items-center gap-1">
+                            <Save className="size-3" /> Save & re-match (±{windowMin >= 60 ? `${windowMin / 60}h` : `${windowMin}m`})
+                          </button>
+                          <button onClick={() => { setEditId(null); setEditDraft(null); }} className="px-3 py-1 text-[11px] uppercase tracking-widest border border-border rounded-sm inline-flex items-center gap-1">
+                            <X className="size-3" /> Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                   {matches[s.id]?.matches?.length ? (
                     <tr key={s.id + "-matches"} className="bg-secondary/10">
                       <td colSpan={8} className="py-2 px-3">
                         <div className="text-[10px] uppercase tracking-widest text-accent mb-1">
-                          {matches[s.id].matches.length} ADS-B detections within ±15 min
+                          {matches[s.id].matches.length} ADS-B detections within ±{windowMin >= 60 ? `${windowMin / 60} hr` : `${windowMin} min`}
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 font-mono text-[11px]">
                           {matches[s.id].matches.slice(0, 6).map((m) => (

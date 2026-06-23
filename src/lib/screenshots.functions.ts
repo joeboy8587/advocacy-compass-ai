@@ -171,7 +171,7 @@ export const matchScreenshot = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; window_seconds?: number }) => d)
   .handler(async ({ data }) => {
     await ensureSchema();
-    const win = Math.min(Math.max(data.window_seconds ?? 600, 30), 7200);
+    const win = Math.min(Math.max(data.window_seconds ?? 600, 30), 86400);
     const shotRows = await q<{
       id: string;
       exif_taken_at: string | null;
@@ -237,6 +237,53 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       [shot.id, status, matches.length, win, best?.id ?? null, best?.delta_s ?? null],
     );
     return { matches, status };
+  });
+
+// ---------- Update (inline edit of identity / timestamp) ----------
+export const updateScreenshot = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: {
+      id: string;
+      tail?: string | null;
+      icao_hex?: string | null;
+      operator?: string | null;
+      aircraft_type?: string | null;
+      altitude_ft?: number | null;
+      groundspeed_kts?: number | null;
+      exif_taken_at?: string | null;
+      tz_offset_min?: number | null;
+      notes?: string | null;
+    }) => d,
+  )
+  .handler(async ({ data }) => {
+    await ensureSchema();
+    await q(
+      `UPDATE radar_screenshots SET
+         tail = COALESCE($2, tail),
+         icao_hex = COALESCE($3, icao_hex),
+         operator = COALESCE($4, operator),
+         aircraft_type = COALESCE($5, aircraft_type),
+         altitude_ft = COALESCE($6, altitude_ft),
+         groundspeed_kts = COALESCE($7, groundspeed_kts),
+         exif_taken_at = COALESCE($8::timestamptz, exif_taken_at),
+         tz_offset_min = COALESCE($9, tz_offset_min),
+         notes = COALESCE($10, notes),
+         match_status = 'PENDING'
+       WHERE id = $1`,
+      [
+        data.id,
+        data.tail ? data.tail.toUpperCase() : null,
+        data.icao_hex ? data.icao_hex.toLowerCase() : null,
+        data.operator ?? null,
+        data.aircraft_type ?? null,
+        data.altitude_ft ?? null,
+        data.groundspeed_kts ?? null,
+        data.exif_taken_at ?? null,
+        data.tz_offset_min ?? null,
+        data.notes ?? null,
+      ],
+    );
+    return { ok: true };
   });
 
 // ---------- Delete ----------

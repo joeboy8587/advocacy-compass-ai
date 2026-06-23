@@ -178,10 +178,57 @@ function ScreenshotsPage() {
         groundspeed: "",
         tzOffsetMin: defaultTzMin,
         notes: "",
+        scanning: false,
+        visionApplied: false,
+        visionError: null,
       });
     }
     setParsed((p) => [...next, ...p]);
     setBusy(false);
+    // Fire-and-forget vision auto-fill for each newly added file
+    for (const item of next) void runVision(item.sha256);
+  }
+
+  async function runVision(sha: string) {
+    // Find by sha to be idx-stable across re-renders
+    const target = parsedRef.current.find((x) => x.sha256 === sha);
+    if (!target) return;
+    setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: true, visionError: null } : x)));
+    try {
+      const r = await analyzeScreenshot({ data: { image_data_url: target.dataUrl } });
+      if (!r.ok) {
+        setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: false, visionError: r.error } : x)));
+        return;
+      }
+      const v = r.extract;
+      setParsed((all) =>
+        all.map((x) => {
+          if (x.sha256 !== sha) return x;
+          // Synthesize a naive local timestamp from status bar if EXIF missing
+          let naive = x.exifNaiveLocal;
+          const t = statusBarTo24h(v.status_bar_time, v.status_bar_period);
+          if (!naive && t) naive = `${dateFromFile(x.file)} ${t}`;
+          const iso = naiveLocalToUtcIso(naive, x.tzOffsetMin);
+          return {
+            ...x,
+            scanning: false,
+            visionApplied: true,
+            tail: x.tail || (v.registration ?? ""),
+            icaoHex: x.icaoHex || (v.icao_hex ?? ""),
+            operator: x.operator || (v.operator ?? ""),
+            aircraftType: x.aircraftType || (v.aircraft_type ?? ""),
+            altitude: x.altitude || (v.altitude_ft != null ? String(v.altitude_ft) : ""),
+            groundspeed: x.groundspeed || (v.groundspeed_kts != null ? String(v.groundspeed_kts) : ""),
+            notes: x.notes || (v.notes ?? ""),
+            exifNaiveLocal: naive,
+            exifTakenAt: iso ?? x.exifTakenAt,
+          };
+        }),
+      );
+    } catch (e) {
+      const msg = (e as Error).message ?? "Vision failed";
+      setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: false, visionError: msg } : x)));
+    }
   }
 
   function updateParsed(idx: number, patch: Partial<ParsedFile>) {

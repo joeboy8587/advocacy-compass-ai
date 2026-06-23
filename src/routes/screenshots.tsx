@@ -292,22 +292,22 @@ function ScreenshotsPage() {
                   <Field label="Aircraft">
                     <input value={p.aircraftType} onChange={(e) => updateParsed(i, { aircraftType: e.target.value })} placeholder="Airbus H125" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
-                  <Field label="Screenshot TZ offset (min)">
-                    <input
+                  <Field label="Screenshot TZ (camera local)">
+                    <select
                       value={p.tzOffsetMin}
-                      type="number"
                       onChange={(e) => {
                         const newOffset = Number(e.target.value);
-                        // re-derive UTC from the original local EXIF time if we have raw
-                        const original = (p.rawExif?.DateTimeOriginal as Date | undefined) ||
-                          (p.rawExif?.CreateDate as Date | undefined) || null;
-                        const iso = original instanceof Date
-                          ? new Date(original.getTime() - newOffset * 60_000).toISOString()
-                          : p.exifTakenAt;
+                        const iso = naiveLocalToUtcIso(p.exifNaiveLocal, newOffset);
                         updateParsed(i, { tzOffsetMin: newOffset, exifTakenAt: iso });
                       }}
                       className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent"
-                    />
+                    >
+                      <option value={-420}>PDT (UTC−7)</option>
+                      <option value={-480}>PST (UTC−8)</option>
+                      <option value={-360}>MDT (UTC−6)</option>
+                      <option value={-300}>EDT (UTC−5)</option>
+                      <option value={0}>UTC</option>
+                    </select>
                   </Field>
                   <Field label="Notes">
                     <input value={p.notes} onChange={(e) => updateParsed(i, { notes: e.target.value })} placeholder="…" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />

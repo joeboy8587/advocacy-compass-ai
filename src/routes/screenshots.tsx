@@ -117,31 +117,24 @@ function ScreenshotsPage() {
       const sha = await sha256Hex(buf);
       const dataUrl = await readDataUrl(file);
       let raw: Record<string, unknown> | null = null;
-      let takenAt: Date | null = null;
+      let naiveLocal: string | null = null;
       try {
         const exifr = (await import("exifr")).default;
         raw = (await exifr.parse(file, { tiff: true, exif: true, gps: true })) ?? null;
-        const candidate =
-          (raw?.DateTimeOriginal as Date | undefined) ||
-          (raw?.CreateDate as Date | undefined) ||
-          (raw?.ModifyDate as Date | undefined) ||
-          null;
-        if (candidate instanceof Date && !Number.isNaN(candidate.getTime())) {
-          takenAt = candidate;
-        }
+        naiveLocal =
+          naiveFromExifValue(raw?.DateTimeOriginal) ||
+          naiveFromExifValue(raw?.CreateDate) ||
+          naiveFromExifValue(raw?.ModifyDate);
       } catch {
         /* no exif */
       }
-      // EXIF dates from cameras are naive local time. Apply tz offset.
-      let isoUtc: string | null = null;
-      if (takenAt) {
-        const adjusted = new Date(takenAt.getTime() - defaultTzMin * 60_000);
-        isoUtc = adjusted.toISOString();
-      }
+      // Camera writes naive local time (no TZ). Convert with user-selected offset.
+      const isoUtc = naiveLocalToUtcIso(naiveLocal, defaultTzMin);
       next.push({
         file,
         sha256: sha,
         dataUrl,
+        exifNaiveLocal: naiveLocal,
         exifTakenAt: isoUtc,
         rawExif: raw,
         tail: guessTail(file.name),

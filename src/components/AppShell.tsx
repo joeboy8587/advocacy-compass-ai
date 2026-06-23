@@ -13,6 +13,7 @@ const nav = [
   { to: "/operators", label: "Operators", icon: Users },
   { to: "/regulations", label: "Regulations", icon: BookOpen },
   { to: "/doctrine", label: "Doctrine", icon: Library },
+  { to: "/screenshots", label: "Screenshots", icon: Camera },
   { to: "/intel", label: "Josiah", icon: Brain },
 ] as const;
 

@@ -201,12 +201,61 @@ function ScreenshotsPage() {
   async function runMatch(id: string) {
     setMatchingId(id);
     try {
-      const m = await matchScreenshot({ data: { id, window_seconds: 900 } });
+      const m = await matchScreenshot({ data: { id, window_seconds: windowMin * 60 } });
       setMatches((prev) => ({ ...prev, [id]: m }));
       qc.invalidateQueries({ queryKey: ["screenshots"] });
     } finally {
       setMatchingId(null);
     }
+  }
+
+  function startEdit(s: {
+    id: string;
+    tail: string | null;
+    icao_hex: string | null;
+    operator: string | null;
+    aircraft_type: string | null;
+    exif_taken_at: string | null;
+    tz_offset_min: number | null;
+  }) {
+    // Derive naive local from current stored UTC + stored offset (best-effort).
+    let naive = "";
+    if (s.exif_taken_at) {
+      const off = s.tz_offset_min ?? defaultTzMin;
+      const local = new Date(new Date(s.exif_taken_at).getTime() + off * 60_000);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      naive = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}`;
+    }
+    setEditId(s.id);
+    setEditDraft({
+      tail: s.tail ?? "",
+      icaoHex: s.icao_hex ?? "",
+      operator: s.operator ?? "",
+      aircraftType: s.aircraft_type ?? "",
+      tzOffsetMin: s.tz_offset_min ?? defaultTzMin,
+      naiveLocal: naive,
+    });
+  }
+
+  async function saveEdit() {
+    if (!editId || !editDraft) return;
+    const isoUtc = naiveLocalToUtcIso(editDraft.naiveLocal || null, editDraft.tzOffsetMin);
+    await updateScreenshot({
+      data: {
+        id: editId,
+        tail: editDraft.tail || null,
+        icao_hex: editDraft.icaoHex || null,
+        operator: editDraft.operator || null,
+        aircraft_type: editDraft.aircraftType || null,
+        exif_taken_at: isoUtc,
+        tz_offset_min: editDraft.tzOffsetMin,
+      },
+    });
+    const id = editId;
+    setEditId(null);
+    setEditDraft(null);
+    await qc.invalidateQueries({ queryKey: ["screenshots"] });
+    await runMatch(id);
   }
 
   return (

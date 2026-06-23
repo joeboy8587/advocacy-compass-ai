@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, AlertTriangle, FolderOpen, Radio, Brain, Shield, Radar, Gavel, Users, BookOpen, ShieldAlert, Network } from "lucide-react";
+import { Activity, AlertTriangle, FolderOpen, Radio, Brain, Shield, Radar, Gavel, Users, BookOpen, ShieldAlert, Network, Library } from "lucide-react";
 import type { ReactNode } from "react";
 
 const nav = [
@@ -12,6 +12,7 @@ const nav = [
   { to: "/detections", label: "Detections", icon: Radio },
   { to: "/operators", label: "Operators", icon: Users },
   { to: "/regulations", label: "Regulations", icon: BookOpen },
+  { to: "/doctrine", label: "Doctrine", icon: Library },
   { to: "/intel", label: "Josiah", icon: Brain },
 ] as const;
 

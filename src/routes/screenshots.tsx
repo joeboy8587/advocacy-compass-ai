@@ -470,6 +470,13 @@ function ScreenshotsPage() {
                         {matchingId === s.id ? "Matching…" : "Re-match"}
                       </button>
                       <button
+                        onClick={() => startEdit(s)}
+                        className="text-muted-foreground hover:text-accent mr-2"
+                        title="Edit identity / timestamp"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                      <button
                         onClick={() => del.mutate({ data: { id: s.id } })}
                         className="text-muted-foreground hover:text-primary"
                         title="Delete"
@@ -478,11 +485,58 @@ function ScreenshotsPage() {
                       </button>
                     </td>
                   </tr>
+                  {editId === s.id && editDraft ? (
+                    <tr key={s.id + "-edit"} className="bg-secondary/20">
+                      <td colSpan={8} className="py-3 px-3">
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs items-end">
+                          <Field label="Tail">
+                            <input value={editDraft.tail} onChange={(e) => setEditDraft({ ...editDraft, tail: e.target.value.toUpperCase() })} placeholder="N913KC" className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="ICAO Hex">
+                            <input value={editDraft.icaoHex} onChange={(e) => setEditDraft({ ...editDraft, icaoHex: e.target.value.toLowerCase() })} placeholder="aca2b4" className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Operator">
+                            <input value={editDraft.operator} onChange={(e) => setEditDraft({ ...editDraft, operator: e.target.value })} className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Aircraft">
+                            <input value={editDraft.aircraftType} onChange={(e) => setEditDraft({ ...editDraft, aircraftType: e.target.value })} className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Camera local (YYYY-MM-DD HH:MM:SS)">
+                            <input value={editDraft.naiveLocal} onChange={(e) => setEditDraft({ ...editDraft, naiveLocal: e.target.value })} placeholder="2026-06-21 01:55:00" className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
+                          </Field>
+                          <Field label="Camera TZ">
+                            <select
+                              value={editDraft.tzOffsetMin}
+                              onChange={(e) => setEditDraft({ ...editDraft, tzOffsetMin: Number(e.target.value) })}
+                              className="bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs"
+                            >
+                              <option value={-420}>PDT (UTC−7)</option>
+                              <option value={-480}>PST (UTC−8)</option>
+                              <option value={-360}>MDT (UTC−6)</option>
+                              <option value={-300}>EDT (UTC−5)</option>
+                              <option value={0}>UTC</option>
+                            </select>
+                          </Field>
+                        </div>
+                        <div className="mt-2 flex items-center gap-3 text-[11px]">
+                          <span className="text-muted-foreground">
+                            → UTC {naiveLocalToUtcIso(editDraft.naiveLocal || null, editDraft.tzOffsetMin)?.replace("T", " ").slice(0, 19) ?? "—"}
+                          </span>
+                          <button onClick={saveEdit} className="ml-auto px-3 py-1 text-[11px] uppercase tracking-widest bg-primary text-primary-foreground rounded-sm inline-flex items-center gap-1">
+                            <Save className="size-3" /> Save & re-match (±{windowMin >= 60 ? `${windowMin / 60}h` : `${windowMin}m`})
+                          </button>
+                          <button onClick={() => { setEditId(null); setEditDraft(null); }} className="px-3 py-1 text-[11px] uppercase tracking-widest border border-border rounded-sm inline-flex items-center gap-1">
+                            <X className="size-3" /> Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                   {matches[s.id]?.matches?.length ? (
                     <tr key={s.id + "-matches"} className="bg-secondary/10">
                       <td colSpan={8} className="py-2 px-3">
                         <div className="text-[10px] uppercase tracking-widest text-accent mb-1">
-                          {matches[s.id].matches.length} ADS-B detections within ±15 min
+                          {matches[s.id].matches.length} ADS-B detections within ±{windowMin >= 60 ? `${windowMin / 60} hr` : `${windowMin} min`}
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 font-mono text-[11px]">
                           {matches[s.id].matches.slice(0, 6).map((m) => (

@@ -5,7 +5,6 @@ async function q<T = unknown>(text: string, params: unknown[] = []): Promise<T[]
   return neonQuery<T>(text, params);
 }
 
-// ---------- KPIs ----------
 export type Kpis = {
   detections_24h: number;
   anomalies_24h: number;
@@ -17,28 +16,61 @@ export type Kpis = {
   low_alt_24h: number;
   spoofing_24h: number;
   masked_alt_24h: number;
+  impossible_physics_24h: number;
   coordination_locks: number;
   incursions_7d: number;
+  // Pipeline freshness — hours since latest record. Dashboard renders stale badges from these.
+  ml_anomaly_age_hours: number | null;
+  violations_age_hours: number | null;
+  incursions_age_hours: number | null;
+  detections_age_hours: number | null;
+  // Effective windows actually used (anchored to MAX(timestamp) for stale tables)
+  spoofing_window_hours: number;
+  violations_window_days: number;
+  incursions_window_days: number;
 };
 
+/*
+  Josiah's diagnostic (WTPR-NB-INV-002) caught the dashboard lying with hard-coded
+  `now() - interval '24 hours'` against tables whose pipelines are stale.
+
+  Strings ARE uppercase (`SPOOFING_SIGNAL`, `MASKED_ALTITUDE`) — not the bug.
+  Real bug: violation_classifications last write 2026-05-27, ml_anomaly_detections
+  3 days stale, incursion_events 11 days stale. Anchoring windows to MAX(timestamp)
+  per table tells the truth without claiming live data when the pipeline is paused.
+*/
 export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
   const rows = await q<Kpis>(`
+    WITH
+      ml_max AS (SELECT MAX(detected_at) AS t FROM ml_anomaly_detections),
+      vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
+      inc_max AS (SELECT MAX(event_timestamp) AS t FROM incursion_events),
+      det_max AS (SELECT MAX(captured_at) AS t FROM detections)
     SELECT
-      (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours') AS detections_24h,
+      (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS detections_24h,
       (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,
       (SELECT count(*)::int FROM aoi_alerts WHERE captured_at > now() - interval '24 hours' AND alert_level = 'CRITICAL') AS critical_alerts_24h,
       (SELECT count(*)::int FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN','CONFIRMED')) AS active_cases,
-      (SELECT count(*)::int FROM violation_classifications WHERE captured_at > now() - interval '7 days') AS violations_7d,
+      (SELECT count(*)::int FROM violation_classifications WHERE captured_at > (SELECT t FROM vc_max) - interval '7 days') AS violations_7d,
       (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
-      (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > now() - interval '24 hours') AS unique_aircraft_24h,
-      (SELECT count(*)::int FROM detections WHERE captured_at > now() - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h,
-      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > now() - interval '24 hours' AND anomaly_type = 'SPOOFING_SIGNAL') AS spoofing_24h,
-      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > now() - interval '24 hours' AND anomaly_type = 'MASKED_ALTITUDE') AS masked_alt_24h,
+      (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS unique_aircraft_24h,
+      (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h,
+      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'SPOOFING_SIGNAL') AS spoofing_24h,
+      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'MASKED_ALTITUDE') AS masked_alt_24h,
+      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'IMPOSSIBLE_PHYSICS') AS impossible_physics_24h,
       (SELECT count(*)::int FROM wtpr_convergent_locks WHERE machine_confirmed = true) AS coordination_locks,
-      (SELECT count(*)::int FROM incursion_events WHERE event_timestamp > now() - interval '7 days') AS incursions_7d
+      (SELECT count(*)::int FROM incursion_events WHERE event_timestamp > (SELECT t FROM inc_max) - interval '7 days') AS incursions_7d,
+      EXTRACT(EPOCH FROM (now() - (SELECT t FROM ml_max))) / 3600 AS ml_anomaly_age_hours,
+      EXTRACT(EPOCH FROM (now() - (SELECT t FROM vc_max))) / 3600 AS violations_age_hours,
+      EXTRACT(EPOCH FROM (now() - (SELECT t FROM inc_max))) / 3600 AS incursions_age_hours,
+      EXTRACT(EPOCH FROM (now() - (SELECT t FROM det_max))) / 3600 AS detections_age_hours,
+      24 AS spoofing_window_hours,
+      7 AS violations_window_days,
+      7 AS incursions_window_days
   `);
   return rows[0];
 });
+
 
 // ---------- Spoofing analysis ----------
 export type SpoofEvent = {

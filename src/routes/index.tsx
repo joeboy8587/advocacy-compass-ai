@@ -66,7 +66,7 @@ function Command() {
         <div>
           <h1 className="text-2xl neon-text-green">Command Center</h1>
           <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">
-            Last 24h surveillance window // auto-refresh 30s
+            Windows anchored to latest record per table // auto-refresh 30s
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground uppercase tracking-widest">
@@ -74,11 +74,13 @@ function Command() {
         </div>
       </header>
 
+      <PipelineHealth k={k} />
+
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Detections 24h" value={fmt(k.detections_24h)} icon={Radar} tone="green" />
+        <Stat label="Detections 24h" value={fmt(k.detections_24h)} icon={Radar} tone="green" hint={freshHint(k.detections_age_hours)} />
         <Stat label="Unique Aircraft" value={fmt(k.unique_aircraft_24h)} icon={Plane} tone="cyan" />
-        <Stat label="Anomalies" value={fmt(k.anomalies_24h)} icon={Activity} tone="orange" />
+        <Stat label="Anomalies (live)" value={fmt(k.anomalies_24h)} icon={Activity} tone="orange" hint="anomaly_events · live" />
         <Stat
           label="Critical Alerts"
           value={fmt(k.critical_alerts_24h)}
@@ -86,15 +88,17 @@ function Command() {
           tone="orange"
           hint="aoi_alerts // CRITICAL"
         />
-        <Stat label="Low Altitude (<500ft)" value={fmt(k.low_alt_24h)} icon={TrendingDown} tone="magenta" hint="Under 500 ft AGL, airborne — 24h" />
+        <Stat label="Low Altitude (<500ft)" value={fmt(k.low_alt_24h)} icon={TrendingDown} tone="magenta" hint="Under 500ft AGL, airborne" />
         <Stat label="Convergences" value={fmt(k.convergences_24h)} icon={Users} tone="green" />
-        <Stat label="FAA Violations 7d" value={fmt(k.violations_7d)} icon={AlertTriangle} tone="orange" hint="violation_classifications" />
-        <Stat label="Spoofing 24h" value={fmt(k.spoofing_24h)} icon={ShieldAlert} tone="orange" hint="ml_anomaly_detections SPOOFING_SIGNAL" />
-        <Stat label="Masked Altitude 24h" value={fmt(k.masked_alt_24h)} icon={ShieldAlert} tone="magenta" hint="MASKED_ALTITUDE anomalies" />
+        <Stat label="FAA Violations 7d" value={fmt(k.violations_7d)} icon={AlertTriangle} tone="orange" hint={`violation_classifications · ${freshHint(k.violations_age_hours)}`} />
+        <Stat label="Spoofing 24h" value={fmt(k.spoofing_24h)} icon={ShieldAlert} tone="orange" hint={`SPOOFING_SIGNAL · ${freshHint(k.ml_anomaly_age_hours)}`} />
+        <Stat label="Masked Altitude 24h" value={fmt(k.masked_alt_24h)} icon={ShieldAlert} tone="magenta" hint={`MASKED_ALTITUDE · ${freshHint(k.ml_anomaly_age_hours)}`} />
+        <Stat label="Impossible Physics 24h" value={fmt(k.impossible_physics_24h)} icon={ShieldAlert} tone="orange" hint={freshHint(k.ml_anomaly_age_hours)} />
         <Stat label="Coordination Locks" value={fmt(k.coordination_locks)} icon={Network} tone="green" hint="wtpr_convergent_locks confirmed" />
-        <Stat label="Incursions 7d" value={fmt(k.incursions_7d)} icon={TrendingDown} tone="orange" hint="first-time floor breaks" />
+        <Stat label="Incursions 7d" value={fmt(k.incursions_7d)} icon={TrendingDown} tone="orange" hint={`floor breaks · ${freshHint(k.incursions_age_hours)}`} />
         <Stat label="Active Cases" value={fmt(k.active_cases)} icon={FolderOpen} tone="green" />
       </div>
+
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Live Alerts Feed */}
@@ -228,6 +232,68 @@ function Skel() {
 function Empty({ msg }: { msg: string }) {
   return <div className="py-8 text-center text-xs text-muted-foreground uppercase tracking-widest">{msg}</div>;
 }
+
+function freshHint(ageHours: number | null | undefined): string {
+  if (ageHours == null) return "no data";
+  const h = Number(ageHours);
+  if (h < 2) return "live";
+  if (h < 24) return `${h.toFixed(1)}h stale`;
+  return `${(h / 24).toFixed(1)}d stale`;
+}
+
+function PipelineHealth({
+  k,
+}: {
+  k: {
+    ml_anomaly_age_hours: number | null;
+    violations_age_hours: number | null;
+    incursions_age_hours: number | null;
+    detections_age_hours: number | null;
+  };
+}) {
+  const rows = [
+    { label: "Detections (live ADS-B)", age: Number(k.detections_age_hours), warnAfter: 1 },
+    { label: "ML Anomaly Brain", age: Number(k.ml_anomaly_age_hours), warnAfter: 6 },
+    { label: "Violation Classifier", age: Number(k.violations_age_hours), warnAfter: 24 },
+    { label: "Incursion Detector", age: Number(k.incursions_age_hours), warnAfter: 24 },
+  ];
+  const anyStale = rows.some((r) => r.age > r.warnAfter);
+  return (
+    <section className={`panel p-3 ${anyStale ? "border-primary/60" : ""}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+          <Activity className="size-4" /> Pipeline Freshness
+        </div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          {anyStale ? (
+            <span className="text-primary">⚠ stale pipeline · windows anchored to MAX(timestamp)</span>
+          ) : (
+            <span className="text-accent">● all pipelines live</span>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+        {rows.map((r) => {
+          const stale = r.age > r.warnAfter;
+          return (
+            <div
+              key={r.label}
+              className={`flex items-center justify-between px-2 py-1.5 rounded-sm border ${
+                stale ? "border-primary/40 text-primary" : "border-accent/30 text-accent"
+              }`}
+            >
+              <span className="uppercase tracking-wider text-muted-foreground">{r.label}</span>
+              <span className="tabular-nums font-mono">
+                {isFinite(r.age) ? (r.age < 2 ? "live" : r.age < 24 ? `${r.age.toFixed(1)}h` : `${(r.age / 24).toFixed(1)}d`) : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 
 function timeAgo(ts: string) {
   const d = new Date(ts).getTime();

@@ -83,12 +83,12 @@ function Alerts() {
 
   function submitTail(e: React.FormEvent) {
     e.preventDefault();
-    nav({ search: (s) => ({ ...s, q: tail.trim() }) });
+    nav({ search: (s: typeof Route.types.fullSearchSchema) => ({ ...s, q: tail.trim() }) });
   }
 
   function clearTail() {
     setTail("");
-    nav({ search: (s) => ({ ...s, q: "" }) });
+    nav({ search: (s: typeof Route.types.fullSearchSchema) => ({ ...s, q: "" }) });
   }
 
   return (
@@ -123,7 +123,7 @@ function Alerts() {
 
           <select
             value={county}
-            onChange={(e) => nav({ search: (s) => ({ ...s, county: e.target.value }) })}
+            onChange={(e) => nav({ search: (s: typeof Route.types.fullSearchSchema) => ({ ...s, county: e.target.value }) })}
             className="bg-secondary/30 border border-border rounded-sm text-xs px-2 py-1 uppercase tracking-widest"
           >
             <option value="ALL">All Counties</option>
@@ -136,7 +136,7 @@ function Alerts() {
             {(["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"] as const).map((lvl) => (
               <button
                 key={lvl}
-                onClick={() => nav({ search: (s) => ({ ...s, level: lvl }) })}
+                onClick={() => nav({ search: (s: typeof Route.types.fullSearchSchema) => ({ ...s, level: lvl }) })}
                 className={`px-3 py-1 text-[10px] uppercase tracking-widest rounded-sm border transition ${
                   level === lvl
                     ? "bg-primary text-primary-foreground border-primary"

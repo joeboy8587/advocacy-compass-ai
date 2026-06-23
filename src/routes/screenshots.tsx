@@ -438,7 +438,7 @@ function ScreenshotsPage() {
                     <input value={p.notes} onChange={(e) => updateParsed(i, { notes: e.target.value })} placeholder="…" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                 </div>
-                <div className="flex gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2 items-center">
                   <button
                     onClick={() => commit(i)}
                     disabled={upload.isPending}
@@ -447,11 +447,29 @@ function ScreenshotsPage() {
                     {upload.isPending ? "Committing…" : "Hash · Store · Match"}
                   </button>
                   <button
+                    onClick={() => runVision(p.sha256, p.dataUrl, p.file)}
+                    disabled={p.scanning}
+                    className="px-3 py-1.5 text-[11px] uppercase tracking-widest border border-accent/60 text-accent rounded-sm hover:bg-accent/10 inline-flex items-center gap-1"
+                  >
+                    {p.scanning ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
+                    {p.scanning ? "Josiah scanning…" : p.visionApplied ? "Re-scan with Josiah" : "Scan with Josiah"}
+                  </button>
+                  <button
                     onClick={() => setParsed((all) => all.filter((_, idx) => idx !== i))}
                     className="px-3 py-1.5 text-[11px] uppercase tracking-widest border border-border rounded-sm hover:border-primary hover:text-primary"
                   >
                     Discard
                   </button>
+                  {p.visionApplied && !p.scanning && (
+                    <span className="text-[10px] uppercase tracking-widest text-accent inline-flex items-center gap-1">
+                      <CheckCircle2 className="size-3" /> Vision applied
+                    </span>
+                  )}
+                  {p.visionError && (
+                    <span className="text-[10px] uppercase tracking-widest text-primary inline-flex items-center gap-1">
+                      <AlertTriangle className="size-3" /> {p.visionError}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

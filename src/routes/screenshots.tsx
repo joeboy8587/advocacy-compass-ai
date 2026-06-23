@@ -92,6 +92,16 @@ function ScreenshotsPage() {
   const [busy, setBusy] = useState(false);
   const [matches, setMatches] = useState<Record<string, { status: string; matches: DetectionMatch[] }>>({});
   const [matchingId, setMatchingId] = useState<string | null>(null);
+  const [windowMin, setWindowMin] = useState(15); // ± minutes for re-match
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    tail: string;
+    icaoHex: string;
+    operator: string;
+    aircraftType: string;
+    tzOffsetMin: number;
+    naiveLocal: string;
+  } | null>(null);
 
   const list = useQuery({
     queryKey: ["screenshots", search],

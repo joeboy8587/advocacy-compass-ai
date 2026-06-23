@@ -397,14 +397,30 @@ function ScreenshotsPage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-xs uppercase tracking-widest text-accent">Vault · {list.data?.length ?? 0} screenshots</h2>
-          <div className="flex items-center gap-1 border border-border rounded-sm bg-secondary/30 px-2">
-            <Search className="size-3 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tail / ICAO / operator / filename"
-              className="bg-transparent text-xs px-1 py-1 w-72 outline-none placeholder:text-muted-foreground/60"
-            />
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+              Match window ±
+              <select
+                value={windowMin}
+                onChange={(e) => setWindowMin(Number(e.target.value))}
+                className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs"
+              >
+                <option value={5}>5 min</option>
+                <option value={15}>15 min</option>
+                <option value={60}>1 hr</option>
+                <option value={360}>6 hr</option>
+                <option value={1440}>24 hr</option>
+              </select>
+            </label>
+            <div className="flex items-center gap-1 border border-border rounded-sm bg-secondary/30 px-2">
+              <Search className="size-3 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tail / ICAO / operator / filename"
+                className="bg-transparent text-xs px-1 py-1 w-72 outline-none placeholder:text-muted-foreground/60"
+              />
+            </div>
           </div>
         </div>
 

@@ -14,6 +14,7 @@ import { Route as SpoofingRouteImport } from './routes/spoofing'
 import { Route as RegulationsRouteImport } from './routes/regulations'
 import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as IntelRouteImport } from './routes/intel'
+import { Route as DoctrineRouteImport } from './routes/doctrine'
 import { Route as DetectionsRouteImport } from './routes/detections'
 import { Route as CoordinationRouteImport } from './routes/coordination'
 import { Route as CasesRouteImport } from './routes/cases'
@@ -45,6 +46,11 @@ const OperatorsRoute = OperatorsRouteImport.update({
 const IntelRoute = IntelRouteImport.update({
   id: '/intel',
   path: '/intel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DoctrineRoute = DoctrineRouteImport.update({
+  id: '/doctrine',
+  path: '/doctrine',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DetectionsRoute = DetectionsRouteImport.update({
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/cases': typeof CasesRouteWithChildren
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
+  '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/cases': typeof CasesRouteWithChildren
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
+  '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/cases': typeof CasesRouteWithChildren
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
+  '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/cases'
     | '/coordination'
     | '/detections'
+    | '/doctrine'
     | '/intel'
     | '/operators'
     | '/regulations'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/cases'
     | '/coordination'
     | '/detections'
+    | '/doctrine'
     | '/intel'
     | '/operators'
     | '/regulations'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/cases'
     | '/coordination'
     | '/detections'
+    | '/doctrine'
     | '/intel'
     | '/operators'
     | '/regulations'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   CasesRoute: typeof CasesRouteWithChildren
   CoordinationRoute: typeof CoordinationRoute
   DetectionsRoute: typeof DetectionsRoute
+  DoctrineRoute: typeof DoctrineRoute
   IntelRoute: typeof IntelRoute
   OperatorsRoute: typeof OperatorsRoute
   RegulationsRoute: typeof RegulationsRoute
@@ -219,6 +232,13 @@ declare module '@tanstack/react-router' {
       path: '/intel'
       fullPath: '/intel'
       preLoaderRoute: typeof IntelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/doctrine': {
+      id: '/doctrine'
+      path: '/doctrine'
+      fullPath: '/doctrine'
+      preLoaderRoute: typeof DoctrineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/detections': {
@@ -301,6 +321,7 @@ const rootRouteChildren: RootRouteChildren = {
   CasesRoute: CasesRouteWithChildren,
   CoordinationRoute: CoordinationRoute,
   DetectionsRoute: DetectionsRoute,
+  DoctrineRoute: DoctrineRoute,
   IntelRoute: IntelRoute,
   OperatorsRoute: OperatorsRoute,
   RegulationsRoute: RegulationsRoute,

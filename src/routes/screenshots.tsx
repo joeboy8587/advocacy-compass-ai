@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search, Pencil, Save, X } from "lucide-react";
+import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search, Pencil, Save, X, Eye } from "lucide-react";
 import { Fragment, useState } from "react";
 // exifr is dynamically imported inside handleFiles to avoid SSR/hydration issues
 import {
@@ -9,6 +9,7 @@ import {
   matchScreenshot,
   updateScreenshot,
   deleteScreenshot,
+  analyzeScreenshot,
   type DetectionMatch,
 } from "@/lib/screenshots.functions";
 
@@ -32,7 +33,29 @@ type ParsedFile = {
   groundspeed: string;
   tzOffsetMin: number; // minutes east of UTC; PDT = -420
   notes: string;
+  scanning: boolean;
+  visionApplied: boolean;
+  visionError: string | null;
 };
+
+// Convert vision status bar "HH:MM" + AM/PM into a 24h "HH:MM:SS" string
+function statusBarTo24h(time: string | null, period: "AM" | "PM" | null): string | null {
+  if (!time) return null;
+  const m = time.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  if (period === "AM") { if (h === 12) h = 0; }
+  else if (period === "PM") { if (h !== 12) h += 12; }
+  return `${String(h).padStart(2, "0")}:${min}:00`;
+}
+
+function dateFromFile(file: File): string {
+  // YYYY-MM-DD using the file's lastModified in UTC (best available date anchor when EXIF is missing)
+  const d = new Date(file.lastModified || Date.now());
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
 
 // Build a UTC ISO from a naive local "YYYY-MM-DD HH:MM:SS" string + a tz offset
 // in minutes (PDT = -420 → UTC = local + 420 min). This bypasses the browser TZ
@@ -155,10 +178,53 @@ function ScreenshotsPage() {
         groundspeed: "",
         tzOffsetMin: defaultTzMin,
         notes: "",
+        scanning: false,
+        visionApplied: false,
+        visionError: null,
       });
     }
     setParsed((p) => [...next, ...p]);
     setBusy(false);
+    // Fire-and-forget vision auto-fill for each newly added file
+    for (const item of next) void runVision(item.sha256, item.dataUrl, item.file);
+  }
+
+  async function runVision(sha: string, dataUrl: string, file: File) {
+    setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: true, visionError: null } : x)));
+    try {
+      const r = await analyzeScreenshot({ data: { image_data_url: dataUrl } });
+      if (!r.ok) {
+        setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: false, visionError: r.error } : x)));
+        return;
+      }
+      const v = r.extract;
+      setParsed((all) =>
+        all.map((x): ParsedFile => {
+          if (x.sha256 !== sha) return x;
+          let naive = x.exifNaiveLocal;
+          const t = statusBarTo24h(v.status_bar_time, v.status_bar_period);
+          if (!naive && t) naive = `${dateFromFile(file)} ${t}`;
+          const iso = naiveLocalToUtcIso(naive, x.tzOffsetMin);
+          return {
+            ...x,
+            scanning: false,
+            visionApplied: true,
+            tail: x.tail || (v.registration ?? ""),
+            icaoHex: x.icaoHex || (v.icao_hex ?? ""),
+            operator: x.operator || (v.operator ?? ""),
+            aircraftType: x.aircraftType || (v.aircraft_type ?? ""),
+            altitude: x.altitude || (v.altitude_ft != null ? String(v.altitude_ft) : ""),
+            groundspeed: x.groundspeed || (v.groundspeed_kts != null ? String(v.groundspeed_kts) : ""),
+            notes: x.notes || (v.notes ?? ""),
+            exifNaiveLocal: naive,
+            exifTakenAt: iso ?? x.exifTakenAt,
+          };
+        }),
+      );
+    } catch (e) {
+      const msg = (e as Error).message ?? "Vision failed";
+      setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: false, visionError: msg } : x)));
+    }
   }
 
   function updateParsed(idx: number, patch: Partial<ParsedFile>) {
@@ -372,7 +438,7 @@ function ScreenshotsPage() {
                     <input value={p.notes} onChange={(e) => updateParsed(i, { notes: e.target.value })} placeholder="…" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                 </div>
-                <div className="flex gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2 items-center">
                   <button
                     onClick={() => commit(i)}
                     disabled={upload.isPending}
@@ -381,11 +447,29 @@ function ScreenshotsPage() {
                     {upload.isPending ? "Committing…" : "Hash · Store · Match"}
                   </button>
                   <button
+                    onClick={() => runVision(p.sha256, p.dataUrl, p.file)}
+                    disabled={p.scanning}
+                    className="px-3 py-1.5 text-[11px] uppercase tracking-widest border border-accent/60 text-accent rounded-sm hover:bg-accent/10 inline-flex items-center gap-1"
+                  >
+                    {p.scanning ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
+                    {p.scanning ? "Josiah scanning…" : p.visionApplied ? "Re-scan with Josiah" : "Scan with Josiah"}
+                  </button>
+                  <button
                     onClick={() => setParsed((all) => all.filter((_, idx) => idx !== i))}
                     className="px-3 py-1.5 text-[11px] uppercase tracking-widest border border-border rounded-sm hover:border-primary hover:text-primary"
                   >
                     Discard
                   </button>
+                  {p.visionApplied && !p.scanning && (
+                    <span className="text-[10px] uppercase tracking-widest text-accent inline-flex items-center gap-1">
+                      <CheckCircle2 className="size-3" /> Vision applied
+                    </span>
+                  )}
+                  {p.visionError && (
+                    <span className="text-[10px] uppercase tracking-widest text-primary inline-flex items-center gap-1">
+                      <AlertTriangle className="size-3" /> {p.visionError}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

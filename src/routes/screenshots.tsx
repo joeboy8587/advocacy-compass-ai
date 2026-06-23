@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search } from "lucide-react";
 import { Fragment, useState } from "react";
-import exifr from "exifr";
+// exifr is dynamically imported inside handleFiles to avoid SSR/hydration issues
 import {
   uploadScreenshot,
   listScreenshots,
@@ -89,6 +89,7 @@ function ScreenshotsPage() {
       let raw: Record<string, unknown> | null = null;
       let takenAt: Date | null = null;
       try {
+        const exifr = (await import("exifr")).default;
         raw = (await exifr.parse(file, { tiff: true, exif: true, gps: true })) ?? null;
         const candidate =
           (raw?.DateTimeOriginal as Date | undefined) ||

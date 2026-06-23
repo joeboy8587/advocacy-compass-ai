@@ -397,7 +397,7 @@ function ScreenshotsPage() {
                       </td>
                     </tr>
                   ) : null}
-                </>
+                </Fragment>
               ))}
               {list.isLoading && (
                 <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">Loading…</td></tr>

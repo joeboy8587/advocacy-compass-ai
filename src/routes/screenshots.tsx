@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search } from "lucide-react";
+import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search, Pencil, Save, X } from "lucide-react";
 import { Fragment, useState } from "react";
 // exifr is dynamically imported inside handleFiles to avoid SSR/hydration issues
 import {

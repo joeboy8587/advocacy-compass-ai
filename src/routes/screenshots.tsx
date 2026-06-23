@@ -248,22 +248,22 @@ function ScreenshotsPage() {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                   <Field label="Tail">
-                    <input value={p.tail} onChange={(e) => updateParsed(i, { tail: e.target.value.toUpperCase() })} placeholder="N913KC" className="ws-input" />
+                    <input value={p.tail} onChange={(e) => updateParsed(i, { tail: e.target.value.toUpperCase() })} placeholder="N913KC" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                   <Field label="ICAO Hex">
-                    <input value={p.icaoHex} onChange={(e) => updateParsed(i, { icaoHex: e.target.value.toLowerCase() })} placeholder="ae12fd" className="ws-input" />
+                    <input value={p.icaoHex} onChange={(e) => updateParsed(i, { icaoHex: e.target.value.toLowerCase() })} placeholder="ae12fd" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                   <Field label="Altitude ft">
-                    <input value={p.altitude} onChange={(e) => updateParsed(i, { altitude: e.target.value })} placeholder="1575" className="ws-input" />
+                    <input value={p.altitude} onChange={(e) => updateParsed(i, { altitude: e.target.value })} placeholder="1575" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                   <Field label="GS kts">
-                    <input value={p.groundspeed} onChange={(e) => updateParsed(i, { groundspeed: e.target.value })} placeholder="113" className="ws-input" />
+                    <input value={p.groundspeed} onChange={(e) => updateParsed(i, { groundspeed: e.target.value })} placeholder="113" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                   <Field label="Operator">
-                    <input value={p.operator} onChange={(e) => updateParsed(i, { operator: e.target.value })} placeholder="Kern County Sheriff" className="ws-input" />
+                    <input value={p.operator} onChange={(e) => updateParsed(i, { operator: e.target.value })} placeholder="Kern County Sheriff" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                   <Field label="Aircraft">
-                    <input value={p.aircraftType} onChange={(e) => updateParsed(i, { aircraftType: e.target.value })} placeholder="Airbus H125" className="ws-input" />
+                    <input value={p.aircraftType} onChange={(e) => updateParsed(i, { aircraftType: e.target.value })} placeholder="Airbus H125" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                   <Field label="Screenshot TZ offset (min)">
                     <input
@@ -279,11 +279,11 @@ function ScreenshotsPage() {
                           : p.exifTakenAt;
                         updateParsed(i, { tzOffsetMin: newOffset, exifTakenAt: iso });
                       }}
-                      className="ws-input"
+                      className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent"
                     />
                   </Field>
                   <Field label="Notes">
-                    <input value={p.notes} onChange={(e) => updateParsed(i, { notes: e.target.value })} placeholder="…" className="ws-input" />
+                    <input value={p.notes} onChange={(e) => updateParsed(i, { notes: e.target.value })} placeholder="…" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent" />
                   </Field>
                 </div>
                 <div className="flex gap-2 pt-2">

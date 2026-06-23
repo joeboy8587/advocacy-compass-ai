@@ -66,7 +66,7 @@ function Command() {
         <div>
           <h1 className="text-2xl neon-text-green">Command Center</h1>
           <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">
-            Last 24h surveillance window // auto-refresh 30s
+            Windows anchored to latest record per table // auto-refresh 30s
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground uppercase tracking-widest">
@@ -74,11 +74,13 @@ function Command() {
         </div>
       </header>
 
+      <PipelineHealth k={k} />
+
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Detections 24h" value={fmt(k.detections_24h)} icon={Radar} tone="green" />
+        <Stat label="Detections 24h" value={fmt(k.detections_24h)} icon={Radar} tone="green" hint={freshHint(k.detections_age_hours)} />
         <Stat label="Unique Aircraft" value={fmt(k.unique_aircraft_24h)} icon={Plane} tone="cyan" />
-        <Stat label="Anomalies" value={fmt(k.anomalies_24h)} icon={Activity} tone="orange" />
+        <Stat label="Anomalies (live)" value={fmt(k.anomalies_24h)} icon={Activity} tone="orange" hint="anomaly_events · live" />
         <Stat
           label="Critical Alerts"
           value={fmt(k.critical_alerts_24h)}
@@ -86,15 +88,17 @@ function Command() {
           tone="orange"
           hint="aoi_alerts // CRITICAL"
         />
-        <Stat label="Low Altitude (<500ft)" value={fmt(k.low_alt_24h)} icon={TrendingDown} tone="magenta" hint="Under 500 ft AGL, airborne — 24h" />
+        <Stat label="Low Altitude (<500ft)" value={fmt(k.low_alt_24h)} icon={TrendingDown} tone="magenta" hint="Under 500ft AGL, airborne" />
         <Stat label="Convergences" value={fmt(k.convergences_24h)} icon={Users} tone="green" />
-        <Stat label="FAA Violations 7d" value={fmt(k.violations_7d)} icon={AlertTriangle} tone="orange" hint="violation_classifications" />
-        <Stat label="Spoofing 24h" value={fmt(k.spoofing_24h)} icon={ShieldAlert} tone="orange" hint="ml_anomaly_detections SPOOFING_SIGNAL" />
-        <Stat label="Masked Altitude 24h" value={fmt(k.masked_alt_24h)} icon={ShieldAlert} tone="magenta" hint="MASKED_ALTITUDE anomalies" />
+        <Stat label="FAA Violations 7d" value={fmt(k.violations_7d)} icon={AlertTriangle} tone="orange" hint={`violation_classifications · ${freshHint(k.violations_age_hours)}`} />
+        <Stat label="Spoofing 24h" value={fmt(k.spoofing_24h)} icon={ShieldAlert} tone="orange" hint={`SPOOFING_SIGNAL · ${freshHint(k.ml_anomaly_age_hours)}`} />
+        <Stat label="Masked Altitude 24h" value={fmt(k.masked_alt_24h)} icon={ShieldAlert} tone="magenta" hint={`MASKED_ALTITUDE · ${freshHint(k.ml_anomaly_age_hours)}`} />
+        <Stat label="Impossible Physics 24h" value={fmt(k.impossible_physics_24h)} icon={ShieldAlert} tone="orange" hint={freshHint(k.ml_anomaly_age_hours)} />
         <Stat label="Coordination Locks" value={fmt(k.coordination_locks)} icon={Network} tone="green" hint="wtpr_convergent_locks confirmed" />
-        <Stat label="Incursions 7d" value={fmt(k.incursions_7d)} icon={TrendingDown} tone="orange" hint="first-time floor breaks" />
+        <Stat label="Incursions 7d" value={fmt(k.incursions_7d)} icon={TrendingDown} tone="orange" hint={`floor breaks · ${freshHint(k.incursions_age_hours)}`} />
         <Stat label="Active Cases" value={fmt(k.active_cases)} icon={FolderOpen} tone="green" />
       </div>
+
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Live Alerts Feed */}

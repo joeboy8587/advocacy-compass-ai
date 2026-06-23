@@ -33,7 +33,29 @@ type ParsedFile = {
   groundspeed: string;
   tzOffsetMin: number; // minutes east of UTC; PDT = -420
   notes: string;
+  scanning: boolean;
+  visionApplied: boolean;
+  visionError: string | null;
 };
+
+// Convert vision status bar "HH:MM" + AM/PM into a 24h "HH:MM:SS" string
+function statusBarTo24h(time: string | null, period: "AM" | "PM" | null): string | null {
+  if (!time) return null;
+  const m = time.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  if (period === "AM") { if (h === 12) h = 0; }
+  else if (period === "PM") { if (h !== 12) h += 12; }
+  return `${String(h).padStart(2, "0")}:${min}:00`;
+}
+
+function dateFromFile(file: File): string {
+  // YYYY-MM-DD using the file's lastModified in UTC (best available date anchor when EXIF is missing)
+  const d = new Date(file.lastModified || Date.now());
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
 
 // Build a UTC ISO from a naive local "YYYY-MM-DD HH:MM:SS" string + a tz offset
 // in minutes (PDT = -420 → UTC = local + 420 min). This bypasses the browser TZ

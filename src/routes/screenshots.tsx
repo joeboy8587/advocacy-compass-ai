@@ -21,7 +21,8 @@ type ParsedFile = {
   file: File;
   sha256: string;
   dataUrl: string;
-  exifTakenAt: string | null; // UTC ISO
+  exifNaiveLocal: string | null; // "YYYY-MM-DD HH:MM:SS" as written by camera, no TZ
+  exifTakenAt: string | null; // UTC ISO derived from naive + tzOffsetMin
   rawExif: Record<string, unknown> | null;
   tail: string;
   icaoHex: string;
@@ -29,9 +30,37 @@ type ParsedFile = {
   aircraftType: string;
   altitude: string;
   groundspeed: string;
-  tzOffsetMin: number; // user-selected offset applied to naive EXIF time
+  tzOffsetMin: number; // minutes east of UTC; PDT = -420
   notes: string;
 };
+
+// Build a UTC ISO from a naive local "YYYY-MM-DD HH:MM:SS" string + a tz offset
+// in minutes (PDT = -420 → UTC = local + 420 min). This bypasses the browser TZ
+// entirely so the same screenshot resolves to the same UTC no matter where it's processed.
+function naiveLocalToUtcIso(naive: string | null, tzOffsetMin: number): string | null {
+  if (!naive) return null;
+  const m = naive.match(/(\d{4})\D(\d{1,2})\D(\d{1,2})[ T](\d{1,2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, hh, mm, ss] = m;
+  const utcMs = Date.UTC(+y, +mo - 1, +d, +hh, +mm, +ss) - tzOffsetMin * 60_000;
+  return new Date(utcMs).toISOString();
+}
+
+// Extract a "YYYY-MM-DD HH:MM:SS" naive local string from whatever exifr returned.
+function naiveFromExifValue(v: unknown): string | null {
+  if (!v) return null;
+  if (typeof v === "string") {
+    // EXIF spec format is "YYYY:MM:DD HH:MM:SS"
+    return v.replace(":", "-").replace(":", "-");
+  }
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    // exifr parsed the naive EXIF as if it were UTC. Re-extract UTC fields as the naive components.
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${v.getUTCFullYear()}-${pad(v.getUTCMonth() + 1)}-${pad(v.getUTCDate())} ${pad(v.getUTCHours())}:${pad(v.getUTCMinutes())}:${pad(v.getUTCSeconds())}`;
+  }
+  return null;
+}
+
 
 async function sha256Hex(buf: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", buf);

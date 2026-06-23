@@ -338,7 +338,7 @@ function ScreenshotsPage() {
             </thead>
             <tbody>
               {list.data?.map((s) => (
-                <>
+                <Fragment key={s.id}>
                   <tr key={s.id} className="border-t border-border/40 hover:bg-secondary/30">
                     <td className="py-2 px-3 text-muted-foreground whitespace-nowrap">
                       {new Date(s.uploaded_at).toLocaleString()}

@@ -51,7 +51,7 @@ export type SpoofEvent = {
   anomaly_score: string | null;
   confidence_level: string | null;
   county: string | null;
-  features: Record<string, unknown> | null;
+  features: unknown;
 };
 
 export const getSpoofingFeed = createServerFn({ method: "GET" })

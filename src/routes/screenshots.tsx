@@ -262,8 +262,11 @@ function ScreenshotsPage() {
                   <span className="font-mono text-muted-foreground" title={p.sha256}>
                     sha256:{p.sha256.slice(0, 16)}…
                   </span>
-                  {p.exifTakenAt ? (
-                    <span className="text-accent">EXIF → {new Date(p.exifTakenAt).toISOString()} (UTC)</span>
+                  {p.exifNaiveLocal ? (
+                    <>
+                      <span className="text-muted-foreground">camera local {p.exifNaiveLocal}</span>
+                      <span className="text-accent">→ UTC {p.exifTakenAt ? new Date(p.exifTakenAt).toISOString().replace("T", " ").slice(0, 19) : "—"}</span>
+                    </>
                   ) : (
                     <span className="text-primary flex items-center gap-1">
                       <AlertTriangle className="size-3" /> No EXIF timestamp

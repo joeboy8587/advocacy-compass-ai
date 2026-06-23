@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Upload, Trash2, Link2, CheckCircle2, AlertTriangle, Loader2, Search } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import exifr from "exifr";
 import {
   uploadScreenshot,

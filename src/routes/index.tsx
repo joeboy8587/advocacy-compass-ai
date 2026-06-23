@@ -233,6 +233,68 @@ function Empty({ msg }: { msg: string }) {
   return <div className="py-8 text-center text-xs text-muted-foreground uppercase tracking-widest">{msg}</div>;
 }
 
+function freshHint(ageHours: number | null | undefined): string {
+  if (ageHours == null) return "no data";
+  const h = Number(ageHours);
+  if (h < 2) return "live";
+  if (h < 24) return `${h.toFixed(1)}h stale`;
+  return `${(h / 24).toFixed(1)}d stale`;
+}
+
+function PipelineHealth({
+  k,
+}: {
+  k: {
+    ml_anomaly_age_hours: number | null;
+    violations_age_hours: number | null;
+    incursions_age_hours: number | null;
+    detections_age_hours: number | null;
+  };
+}) {
+  const rows = [
+    { label: "Detections (live ADS-B)", age: Number(k.detections_age_hours), warnAfter: 1 },
+    { label: "ML Anomaly Brain", age: Number(k.ml_anomaly_age_hours), warnAfter: 6 },
+    { label: "Violation Classifier", age: Number(k.violations_age_hours), warnAfter: 24 },
+    { label: "Incursion Detector", age: Number(k.incursions_age_hours), warnAfter: 24 },
+  ];
+  const anyStale = rows.some((r) => r.age > r.warnAfter);
+  return (
+    <section className={`panel p-3 ${anyStale ? "border-primary/60" : ""}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+          <Activity className="size-4" /> Pipeline Freshness
+        </div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          {anyStale ? (
+            <span className="text-primary">⚠ stale pipeline · windows anchored to MAX(timestamp)</span>
+          ) : (
+            <span className="text-accent">● all pipelines live</span>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+        {rows.map((r) => {
+          const stale = r.age > r.warnAfter;
+          return (
+            <div
+              key={r.label}
+              className={`flex items-center justify-between px-2 py-1.5 rounded-sm border ${
+                stale ? "border-primary/40 text-primary" : "border-accent/30 text-accent"
+              }`}
+            >
+              <span className="uppercase tracking-wider text-muted-foreground">{r.label}</span>
+              <span className="tabular-nums font-mono">
+                {isFinite(r.age) ? (r.age < 2 ? "live" : r.age < 24 ? `${r.age.toFixed(1)}h` : `${(r.age / 24).toFixed(1)}d`) : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+
 function timeAgo(ts: string) {
   const d = new Date(ts).getTime();
   const s = Math.floor((Date.now() - d) / 1000);

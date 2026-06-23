@@ -7,6 +7,7 @@ import {
   uploadScreenshot,
   listScreenshots,
   matchScreenshot,
+  updateScreenshot,
   deleteScreenshot,
   type DetectionMatch,
 } from "@/lib/screenshots.functions";

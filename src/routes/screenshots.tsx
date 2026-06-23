@@ -89,6 +89,7 @@ function ScreenshotsPage() {
       let raw: Record<string, unknown> | null = null;
       let takenAt: Date | null = null;
       try {
+        const exifr = (await import("exifr")).default;
         raw = (await exifr.parse(file, { tiff: true, exif: true, gps: true })) ?? null;
         const candidate =
           (raw?.DateTimeOriginal as Date | undefined) ||

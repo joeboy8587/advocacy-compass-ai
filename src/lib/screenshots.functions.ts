@@ -296,7 +296,7 @@ export const matchScreenshot = createServerFn({ method: "POST" })
     }
     const matches = await q<DetectionMatch>(
       `SELECT d.id, d.captured_at, d.icao_hex, d.registration,
-              d.altitude_ft, d.groundspeed_kts, d.county,
+              d.altitude_ft, d.speed_kts AS groundspeed_kts, d.county,
               d.latitude, d.longitude,
               abs(extract(epoch from (d.captured_at - $1::timestamptz)))::int AS delta_s
        FROM detections d

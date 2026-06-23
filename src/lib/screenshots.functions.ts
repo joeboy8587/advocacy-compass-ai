@@ -1,4 +1,91 @@
 import { createServerFn } from "@tanstack/react-start";
+import { generateText } from "ai";
+
+// ---------- Josiah Vision: extract aircraft data from a radar screenshot ----------
+export type VisionExtract = {
+  registration: string | null;
+  icao_hex: string | null;
+  operator: string | null;
+  aircraft_type: string | null;
+  altitude_ft: number | null;
+  groundspeed_kts: number | null;
+  status_bar_time: string | null; // "HH:MM" 24h
+  status_bar_period: "AM" | "PM" | null;
+  departure_airport: string | null;
+  map_area: string | null;
+  notes: string | null;
+};
+
+export const analyzeScreenshot = createServerFn({ method: "POST" })
+  .inputValidator((d: { image_data_url: string }) => {
+    if (!d?.image_data_url?.startsWith("data:image/")) throw new Error("image_data_url required");
+    return d;
+  })
+  .handler(async ({ data }): Promise<{ ok: true; extract: VisionExtract } | { ok: false; error: string }> => {
+    const key = process.env.LOVABLE_API_KEY;
+    if (!key) return { ok: false, error: "LOVABLE_API_KEY not configured" };
+    const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
+    const gateway = createLovableAiGatewayProvider(key);
+
+    const system = `You are Josiah Vision — a forensic radar-screenshot OCR/extractor for Watchtower.
+Read a Flightradar24 / ADS-B Exchange / similar tracker screenshot and extract structured aircraft data.
+Read the STATUS BAR clock at the top of the phone (not EXIF) for the time. Return ONLY a JSON object — no prose, no markdown.
+Schema:
+{
+  "registration": "<N-number, uppercase, or null>",
+  "icao_hex": "<6-char hex lowercase, or null>",
+  "operator": "<owner/operator string, or null>",
+  "aircraft_type": "<type/model, or null>",
+  "altitude_ft": <integer or null>,
+  "groundspeed_kts": <integer or null>,
+  "status_bar_time": "<HH:MM 24h or null>",
+  "status_bar_period": "<AM|PM or null>",
+  "departure_airport": "<IATA/ICAO or null>",
+  "map_area": "<area/county/city visible on map or null>",
+  "notes": "<short note about other aircraft visible, flight-path shape/color, or null>"
+}`;
+
+    try {
+      const { text } = await generateText({
+        model: gateway("google/gemini-3-flash-preview"),
+        system,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Extract aircraft data from this radar screenshot. Return ONLY JSON." },
+              { type: "image", image: data.image_data_url },
+            ],
+          },
+        ],
+      });
+      // Strip fences if model added any
+      const cleaned = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      const jsonStr = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+      const parsed = JSON.parse(jsonStr) as Partial<VisionExtract>;
+      const norm: VisionExtract = {
+        registration: parsed.registration ? String(parsed.registration).toUpperCase().replace(/[^A-Z0-9]/g, "") : null,
+        icao_hex: parsed.icao_hex ? String(parsed.icao_hex).toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 6) : null,
+        operator: parsed.operator ?? null,
+        aircraft_type: parsed.aircraft_type ?? null,
+        altitude_ft: typeof parsed.altitude_ft === "number" ? Math.round(parsed.altitude_ft) : null,
+        groundspeed_kts: typeof parsed.groundspeed_kts === "number" ? Math.round(parsed.groundspeed_kts) : null,
+        status_bar_time: parsed.status_bar_time ?? null,
+        status_bar_period: parsed.status_bar_period === "AM" || parsed.status_bar_period === "PM" ? parsed.status_bar_period : null,
+        departure_airport: parsed.departure_airport ?? null,
+        map_area: parsed.map_area ?? null,
+        notes: parsed.notes ?? null,
+      };
+      return { ok: true, extract: norm };
+    } catch (e) {
+      const msg = (e as Error).message ?? "Vision error";
+      if (msg.includes("429")) return { ok: false, error: "Rate limited — try again in a moment." };
+      if (msg.includes("402")) return { ok: false, error: "Lovable AI credits exhausted." };
+      return { ok: false, error: msg };
+    }
+  });
 
 async function q<T = unknown>(text: string, params: unknown[] = []): Promise<T[]> {
   const { neonQuery } = await import("./neon.server");

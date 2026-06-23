@@ -66,7 +66,7 @@ export const getSpoofingFeed = createServerFn({ method: "GET" })
     }
     return q<SpoofEvent>(
       `SELECT id, detected_at, aircraft_registration, icao24, callsign, anomaly_type,
-              anomaly_score, confidence_level, county, features
+              anomaly_score, confidence_level, county, features::text AS features
          FROM ml_anomaly_detections
         WHERE ${where}
         ORDER BY detected_at DESC NULLS LAST

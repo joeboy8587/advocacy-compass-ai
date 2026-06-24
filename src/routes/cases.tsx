@@ -43,7 +43,11 @@ function CasesIndex() {
             {q.data?.length ?? 0} cases · WTI-ranked
           </p>
         </div>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-2">
+          <Link to="/cases/new"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-[10px] uppercase tracking-widest border border-accent text-accent rounded-sm hover:bg-accent/10">
+            <Plus className="size-3" /> New Case
+          </Link>
           {(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "DISMISSED"] as const).map((s) => (
             <button
               key={s}
@@ -59,6 +63,10 @@ function CasesIndex() {
           ))}
         </div>
       </header>
+
+      <SuggestedPanel />
+
+
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {q.isLoading && <div className="text-muted-foreground text-xs">Loading…</div>}

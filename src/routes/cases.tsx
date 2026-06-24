@@ -1,8 +1,10 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { FolderOpen } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { FolderOpen, Plus, Sparkles, Loader2 } from "lucide-react";
 import { getCases } from "@/lib/watchtower.functions";
+import { getSuggestedCases, createCase } from "@/lib/casework.functions";
 import { z } from "zod";
+
 
 const search = z.object({
   status: z.enum(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "DISMISSED"]).optional().default("ALL"),

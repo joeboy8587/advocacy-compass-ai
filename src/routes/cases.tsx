@@ -1,8 +1,10 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { FolderOpen } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { FolderOpen, Plus, Sparkles, Loader2 } from "lucide-react";
 import { getCases } from "@/lib/watchtower.functions";
+import { getSuggestedCases, createCase } from "@/lib/casework.functions";
 import { z } from "zod";
+
 
 const search = z.object({
   status: z.enum(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "DISMISSED"]).optional().default("ALL"),
@@ -41,7 +43,11 @@ function CasesIndex() {
             {q.data?.length ?? 0} cases · WTI-ranked
           </p>
         </div>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-2">
+          <Link to="/cases/new"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-[10px] uppercase tracking-widest border border-accent text-accent rounded-sm hover:bg-accent/10">
+            <Plus className="size-3" /> New Case
+          </Link>
           {(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "DISMISSED"] as const).map((s) => (
             <button
               key={s}
@@ -57,6 +63,10 @@ function CasesIndex() {
           ))}
         </div>
       </header>
+
+      <SuggestedPanel />
+
+
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {q.isLoading && <div className="text-muted-foreground text-xs">Loading…</div>}
@@ -109,3 +119,68 @@ function CasesIndex() {
     </div>
   );
 }
+
+function SuggestedPanel() {
+  const qc = useQueryClient();
+  const nav = useNavigate();
+  const sug = useQuery({
+    queryKey: ["suggested-cases"],
+    queryFn: () => getSuggestedCases(),
+    refetchInterval: 5 * 60_000,
+  });
+  const make = useMutation({
+    mutationFn: (s: { icao: string; reg: string | null; owner: string | null; county: string | null }) =>
+      createCase({
+        data: {
+          icao: s.icao,
+          reg: s.reg,
+          owner: s.owner,
+          county: s.county,
+          case_type: "AUTO_LOW_ALTITUDE",
+          severity: "HIGH",
+          notes: "Auto-suggested from 7-day low-altitude pattern. Investigate and verify.",
+        },
+      }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["suggested-cases"] });
+      if (r?.case_id) nav({ to: "/cases/$caseId", params: { caseId: r.case_id } });
+    },
+  });
+
+  if (!sug.data?.length) return null;
+  return (
+    <section className="panel scanline p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+          <Sparkles className="size-4" /> Auto-Suggested Cases · 7d low-altitude pattern, no open case
+        </div>
+        <span className="text-[10px] text-muted-foreground">{sug.data.length} subjects</span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+        {sug.data.map((s) => (
+          <div key={s.icao_hex} className="border border-border/60 px-3 py-2 hover:border-accent transition flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-mono text-sm neon-text-orange truncate">
+                {s.registration ?? s.icao_hex}
+                {s.is_military && <span className="ml-2 text-[10px] text-primary">MIL</span>}
+              </div>
+              <div className="text-[10px] text-muted-foreground truncate">{s.owner ?? "—"}</div>
+              <div className="text-[10px] text-muted-foreground">
+                <span className="neon-text-orange">{s.low_alt_7d}</span> low-alt · {s.detections_7d} det · {s.top_county ?? "—"}
+              </div>
+            </div>
+            <button
+              disabled={make.isPending}
+              onClick={() => make.mutate({ icao: s.icao_hex, reg: s.registration, owner: s.owner, county: s.top_county })}
+              className="text-[10px] uppercase tracking-widest border border-accent text-accent px-2 py-1 hover:bg-accent/10 disabled:opacity-50 shrink-0"
+            >
+              {make.isPending ? <Loader2 className="size-3 animate-spin" /> : "Open"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+

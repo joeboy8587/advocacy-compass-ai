@@ -21,6 +21,7 @@ import { Route as CoordinationRouteImport } from './routes/coordination'
 import { Route as CasesRouteImport } from './routes/cases'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CasesNewRouteImport } from './routes/cases.new'
 import { Route as CasesCaseIdRouteImport } from './routes/cases.$caseId'
 import { Route as CasesCaseIdBriefRouteImport } from './routes/cases.$caseId.brief'
 
@@ -84,6 +85,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CasesNewRoute = CasesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CasesRoute,
+} as any)
 const CasesCaseIdRoute = CasesCaseIdRouteImport.update({
   id: '/$caseId',
   path: '/$caseId',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/spoofing': typeof SpoofingRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
+  '/cases/new': typeof CasesNewRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
 }
 export interface FileRoutesByTo {
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/spoofing': typeof SpoofingRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
+  '/cases/new': typeof CasesNewRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
 }
 export interface FileRoutesById {
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/spoofing': typeof SpoofingRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
+  '/cases/new': typeof CasesNewRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
 }
 export interface FileRouteTypes {
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/spoofing'
     | '/violations'
     | '/cases/$caseId'
+    | '/cases/new'
     | '/cases/$caseId/brief'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/spoofing'
     | '/violations'
     | '/cases/$caseId'
+    | '/cases/new'
     | '/cases/$caseId/brief'
   id:
     | '__root__'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/spoofing'
     | '/violations'
     | '/cases/$caseId'
+    | '/cases/new'
     | '/cases/$caseId/brief'
   fileRoutesById: FileRoutesById
 }
@@ -296,6 +308,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cases/new': {
+      id: '/cases/new'
+      path: '/new'
+      fullPath: '/cases/new'
+      preLoaderRoute: typeof CasesNewRouteImport
+      parentRoute: typeof CasesRoute
+    }
     '/cases/$caseId': {
       id: '/cases/$caseId'
       path: '/$caseId'
@@ -327,10 +346,12 @@ const CasesCaseIdRouteWithChildren = CasesCaseIdRoute._addFileChildren(
 
 interface CasesRouteChildren {
   CasesCaseIdRoute: typeof CasesCaseIdRouteWithChildren
+  CasesNewRoute: typeof CasesNewRoute
 }
 
 const CasesRouteChildren: CasesRouteChildren = {
   CasesCaseIdRoute: CasesCaseIdRouteWithChildren,
+  CasesNewRoute: CasesNewRoute,
 }
 
 const CasesRouteWithChildren = CasesRoute._addFileChildren(CasesRouteChildren)
@@ -352,13 +373,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

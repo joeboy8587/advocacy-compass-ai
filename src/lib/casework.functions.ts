@@ -505,10 +505,15 @@ No prose, no markdown, no code fences. Only the JSON object.`;
         prompt: `## Case file\n${JSON.stringify(c, null, 2)}\n\n## Detection sample (up to 50)\n${JSON.stringify(det, null, 2)}`,
       });
       // best-effort JSON parse
-      let parsed: Record<string, unknown> | null = null;
+      type Parsed = {
+        verdict?: string; confidence?: number;
+        strengths?: string[]; weaknesses?: string[]; missing_evidence?: string[];
+        recommended_status?: string; one_line_summary?: string;
+      };
+      let parsed: Parsed | null = null;
       try {
         const m = text.match(/\{[\s\S]*\}/);
-        parsed = m ? JSON.parse(m[0]) : null;
+        parsed = m ? (JSON.parse(m[0]) as Parsed) : null;
       } catch {
         parsed = null;
       }

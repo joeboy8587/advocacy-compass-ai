@@ -710,7 +710,7 @@ function TriageTab({
       <div className="pt-3 border-t border-border text-xs space-y-2">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Reviewer Log</div>
         <Row k="Reviewed by" v={c.reviewed_by ?? "—"} />
-        <Row k="Reviewed at" v={c.reviewed_at ? new Date(c.reviewed_at).toLocaleString() : "—"} />
+        <Row k="Reviewer notes" v={c.reviewer_notes ?? "—"} />
         {c.dismissed_reason && <Row k="Dismissed reason" v={c.dismissed_reason} />}
         {c.is_published && <Row k="Published" v="✔ Public on advocacywatch.live" />}
       </div>

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { generateText } from "ai";
+
 
 const MODEL = "google/gemini-3-flash-preview";
 

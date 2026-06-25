@@ -464,11 +464,10 @@ export const corroborateCase = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("LOVABLE_API_KEY not configured");
+    if (!process.env.LOVABLE_API_KEY && !process.env.OPENAI_API_KEY) {
+      throw new Error("No AI key configured (LOVABLE_API_KEY or OPENAI_API_KEY)");
+    }
     const { neonQuery } = await import("./neon.server");
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
-    const { generateText } = await import("ai");
 
     const caseRows = await neonQuery<Record<string, unknown>>(
       `SELECT * FROM cases WHERE case_id=$1 OR id::text=$1 LIMIT 1`,
@@ -485,7 +484,6 @@ export const corroborateCase = createServerFn({ method: "POST" })
         )
       : [];
 
-    const gateway = createLovableAiGatewayProvider(key);
     const system = `You are Josiah's verification subroutine. You re-read a case file and detection sample and return a STRUCTURED JSON object with these keys ONLY:
 {
   "verdict": "CORROBORATED" | "WEAK" | "CONTRADICTED",
@@ -499,8 +497,9 @@ export const corroborateCase = createServerFn({ method: "POST" })
 No prose, no markdown, no code fences. Only the JSON object.`;
 
     try {
-      const { text } = await generateText({
-        model: gateway("google/gemini-3-flash-preview"),
+      const { generateTextWithFallback } = await import("./ai-fallback.server");
+      const { text } = await generateTextWithFallback({
+        model: "google/gemini-3-flash-preview",
         system,
         prompt: `## Case file\n${JSON.stringify(c, null, 2)}\n\n## Detection sample (up to 50)\n${JSON.stringify(det, null, 2)}`,
       });

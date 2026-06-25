@@ -233,13 +233,16 @@ function ScreenshotsPage() {
 
   async function commit(idx: number) {
     const p = parsed[idx];
+    // Status-bar local "HH:MM:SS" — derived from naive local string when available.
+    // This is the phone clock at capture, used as the TOD-fallback anchor server-side.
+    const statusBarLocal = p.exifNaiveLocal?.match(/(\d{1,2}):(\d{2}):(\d{2})/)?.[0] ?? null;
     const res = await upload.mutateAsync({
       data: {
         filename: p.file.name,
         mime_type: p.file.type || "image/png",
         file_size: p.file.size,
         sha256: p.sha256,
-        image_data_url: p.dataUrl.length < 4_500_000 ? p.dataUrl : null, // skip >~4MB
+        image_data_url: p.dataUrl.length < 4_500_000 ? p.dataUrl : null,
         exif_taken_at: p.exifTakenAt,
         tz_offset_min: p.tzOffsetMin,
         raw_exif: p.rawExif,
@@ -250,12 +253,14 @@ function ScreenshotsPage() {
         altitude_ft: p.altitude ? Number(p.altitude) : null,
         groundspeed_kts: p.groundspeed ? Number(p.groundspeed) : null,
         notes: p.notes || null,
+        status_bar_local: statusBarLocal,
       },
     });
-    // Auto-match if we have a timestamp + aircraft identity
-    if (p.exifTakenAt && (p.tail || p.icaoHex)) {
+    // Auto-match if we have any aircraft identity. The server will try exact-time
+    // window first, then fall back to time-of-day across the last 14 days.
+    if (p.tail || p.icaoHex) {
       try {
-        const m = await matchScreenshot({ data: { id: res.id, window_seconds: 900 } });
+        const m = await matchScreenshot({ data: { id: res.id, window_seconds: 900, tod_days: 14 } });
         setMatches((prev) => ({ ...prev, [res.id]: m }));
       } catch {
         /* keep silent — user can retry */
@@ -267,7 +272,7 @@ function ScreenshotsPage() {
   async function runMatch(id: string) {
     setMatchingId(id);
     try {
-      const m = await matchScreenshot({ data: { id, window_seconds: windowMin * 60 } });
+      const m = await matchScreenshot({ data: { id, window_seconds: windowMin * 60, tod_days: 14 } });
       setMatches((prev) => ({ ...prev, [id]: m }));
       qc.invalidateQueries({ queryKey: ["screenshots"] });
     } finally {

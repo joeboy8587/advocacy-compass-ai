@@ -38,18 +38,16 @@ export async function generateTextWithFallback(opts: {
     try {
       const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
       const gateway = createLovableAiGatewayProvider(lovableKey);
-      const { text } = await generateText({
-        model: gateway(opts.model),
-        system: opts.system,
-        prompt: opts.prompt,
-        messages: opts.messages,
-      });
+      const args: Parameters<typeof generateText>[0] = { model: gateway(opts.model) };
+      if (opts.system) args.system = opts.system;
+      if (opts.messages) args.messages = opts.messages;
+      else if (opts.prompt) args.prompt = opts.prompt;
+      const { text } = await generateText(args);
       return { text, provider: "lovable", model: opts.model };
     } catch (e) {
       const msg = (e as Error).message ?? "";
       console.warn("[AI] Lovable failed, attempting OpenAI fallback:", msg.slice(0, 200));
       if (!openaiKey) throw e;
-      // fall through
     }
   }
 

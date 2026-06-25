@@ -272,7 +272,7 @@ function ScreenshotsPage() {
   async function runMatch(id: string) {
     setMatchingId(id);
     try {
-      const m = await matchScreenshot({ data: { id, window_seconds: windowMin * 60 } });
+      const m = await matchScreenshot({ data: { id, window_seconds: windowMin * 60, tod_days: 14 } });
       setMatches((prev) => ({ ...prev, [id]: m }));
       qc.invalidateQueries({ queryKey: ["screenshots"] });
     } finally {

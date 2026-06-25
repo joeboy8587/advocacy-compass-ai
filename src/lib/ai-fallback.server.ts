@@ -38,11 +38,11 @@ export async function generateTextWithFallback(opts: {
     try {
       const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
       const gateway = createLovableAiGatewayProvider(lovableKey);
-      const args: Parameters<typeof generateText>[0] = { model: gateway(opts.model) };
+      const args: Record<string, unknown> = { model: gateway(opts.model) };
       if (opts.system) args.system = opts.system;
       if (opts.messages) args.messages = opts.messages;
       else if (opts.prompt) args.prompt = opts.prompt;
-      const { text } = await generateText(args);
+      const { text } = await generateText(args as Parameters<typeof generateText>[0]);
       return { text, provider: "lovable", model: opts.model };
     } catch (e) {
       const msg = (e as Error).message ?? "";

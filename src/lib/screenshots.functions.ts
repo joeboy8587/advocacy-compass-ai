@@ -223,7 +223,7 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
       file_size: number;
       sha256: string;
       image_data_url?: string | null;
-      exif_taken_at?: string | null; // ISO with offset applied = UTC
+      exif_taken_at?: string | null;
       tz_offset_min?: number | null;
       raw_exif?: Record<string, unknown> | null;
       tail?: string | null;
@@ -234,6 +234,7 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
       groundspeed_kts?: number | null;
       notes?: string | null;
       source?: string;
+      status_bar_local?: string | null; // "HH:MM:SS" local 24h, what the phone clock showed
     }) => d,
   )
   .handler(async ({ data }) => {
@@ -242,16 +243,14 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
       `SELECT id FROM radar_screenshots WHERE sha256 = $1 LIMIT 1`,
       [data.sha256],
     );
-    if (existing.length) {
-      return { id: existing[0].id, duplicate: true as const };
-    }
+    if (existing.length) return { id: existing[0].id, duplicate: true as const };
     const rows = await q<{ id: string }>(
       `INSERT INTO radar_screenshots
         (source, filename, file_size, sha256, image_data, mime_type,
          exif_taken_at, tz_offset_min, raw_exif,
          tail, icao_hex, operator, aircraft_type,
-         altitude_ft, groundspeed_kts, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         altitude_ft, groundspeed_kts, notes, status_bar_local)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING id`,
       [
         data.source ?? "flightradar24",
@@ -270,6 +269,7 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
         data.altitude_ft ?? null,
         data.groundspeed_kts ?? null,
         data.notes ?? null,
+        data.status_bar_local ?? null,
       ],
     );
     return { id: rows[0].id, duplicate: false as const };
@@ -291,7 +291,8 @@ export const listScreenshots = createServerFn({ method: "GET" })
       `SELECT id, uploaded_at, source, filename, file_size, sha256, mime_type,
               exif_taken_at, tz_offset_min, tail, icao_hex, operator, aircraft_type,
               altitude_ft, groundspeed_kts, notes,
-              match_count, match_window_s, best_match_delta_s, match_status
+              match_count, match_window_s, best_match_delta_s, match_status,
+              status_bar_local, match_method
        FROM radar_screenshots
        ${where}
        ORDER BY uploaded_at DESC
@@ -301,59 +302,123 @@ export const listScreenshots = createServerFn({ method: "GET" })
   });
 
 // ---------- Match against detections ----------
+// Strategy:
+//   1) Resolve ICAO from FAA registry if only tail is known (and vice versa).
+//   2) Exact-time window match around exif_taken_at (when present).
+//   3) FALLBACK: time-of-day match across the last 14 days using status_bar_local
+//      (the phone's clock at capture). This rescues screenshots with bad/missing
+//      EXIF — the user's most common case — and is the formula the legacy
+//      visual_evidence pipeline used.
 export const matchScreenshot = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string; window_seconds?: number }) => d)
+  .inputValidator((d: { id: string; window_seconds?: number; tod_days?: number }) => d)
   .handler(async ({ data }) => {
     await ensureSchema();
-    const win = Math.min(Math.max(data.window_seconds ?? 600, 30), 86400);
+    const win = Math.min(Math.max(data.window_seconds ?? 900, 30), 86400);
+    const todDays = Math.min(Math.max(data.tod_days ?? 14, 1), 60);
     const shotRows = await q<{
       id: string;
       exif_taken_at: string | null;
       tail: string | null;
       icao_hex: string | null;
+      status_bar_local: string | null;
+      tz_offset_min: number | null;
     }>(
-      `SELECT id, exif_taken_at, tail, icao_hex FROM radar_screenshots WHERE id = $1`,
+      `SELECT id, exif_taken_at, tail, icao_hex, status_bar_local, tz_offset_min
+       FROM radar_screenshots WHERE id = $1`,
       [data.id],
     );
     if (!shotRows.length) throw new Error("Screenshot not found");
     const shot = shotRows[0];
-    if (!shot.exif_taken_at) {
+    let tail = shot.tail?.toUpperCase() ?? null;
+    let icao = shot.icao_hex?.toLowerCase() ?? null;
+
+    // Auto-resolve ICAO <-> tail via FAA registry so the match predicate matches detections
+    // that were only stored under one of the two identifiers.
+    if (tail && !icao) {
+      const n = tail.startsWith("N") ? tail.slice(1) : tail;
+      const r = await q<{ mode_s_code_hex: string | null }>(
+        `SELECT mode_s_code_hex FROM faa_master WHERE n_number = $1 LIMIT 1`,
+        [n],
+      );
+      if (r[0]?.mode_s_code_hex) icao = r[0].mode_s_code_hex.toLowerCase();
+    } else if (icao && !tail) {
+      const r = await q<{ n_number: string }>(
+        `SELECT n_number FROM faa_master WHERE lower(mode_s_code_hex) = $1 LIMIT 1`,
+        [icao],
+      );
+      if (r[0]?.n_number) tail = `N${r[0].n_number}`;
+    }
+
+    if (!tail && !icao) {
       await q(
-        `UPDATE radar_screenshots SET match_status='NO_TIMESTAMP', match_count=0, match_window_s=$2 WHERE id=$1`,
+        `UPDATE radar_screenshots SET match_status='NO_AIRCRAFT', match_count=0, match_window_s=$2, match_method=NULL WHERE id=$1`,
         [shot.id, win],
       );
-      return { matches: [] as DetectionMatch[], status: "NO_TIMESTAMP" as const };
+      return { matches: [] as DetectionMatch[], status: "NO_AIRCRAFT" as const, method: null as string | null };
     }
-    if (!shot.tail && !shot.icao_hex) {
-      await q(
-        `UPDATE radar_screenshots SET match_status='NO_AIRCRAFT', match_count=0, match_window_s=$2 WHERE id=$1`,
-        [shot.id, win],
+
+    // Build aircraft predicate, including resolved icao/tail
+    const params: unknown[] = [];
+    const preds: string[] = [];
+    if (icao) { params.push(icao); preds.push(`lower(d.icao_hex) = $${params.length}`); }
+    if (tail) { params.push(tail); preds.push(`upper(d.registration) = $${params.length}`); }
+    const aircraftPred = `(${preds.join(" OR ")})`;
+
+    // --- Pass 1: exact-time window around EXIF/synthesized UTC ---
+    let matches: DetectionMatch[] = [];
+    let method: "exact" | "time_of_day" | null = null;
+    if (shot.exif_taken_at) {
+      const p1 = [...params, shot.exif_taken_at, win];
+      matches = await q<DetectionMatch>(
+        `SELECT d.id, d.captured_at, d.icao_hex, d.registration,
+                d.altitude_ft, d.speed_kts AS groundspeed_kts, d.county,
+                d.latitude, d.longitude,
+                abs(extract(epoch from (d.captured_at - $${p1.length - 1}::timestamptz)))::int AS delta_s
+         FROM detections d
+         WHERE ${aircraftPred}
+           AND d.captured_at BETWEEN ($${p1.length - 1}::timestamptz - ($${p1.length} || ' seconds')::interval)
+                                 AND ($${p1.length - 1}::timestamptz + ($${p1.length} || ' seconds')::interval)
+         ORDER BY delta_s ASC
+         LIMIT 25`,
+        p1,
       );
-      return { matches: [] as DetectionMatch[], status: "NO_AIRCRAFT" as const };
+      if (matches.length) method = "exact";
     }
-    const aircraftPredicate: string[] = [];
-    const params: unknown[] = [shot.exif_taken_at, win];
-    if (shot.icao_hex) {
-      params.push(shot.icao_hex.toLowerCase());
-      aircraftPredicate.push(`lower(d.icao_hex) = $${params.length}`);
+
+    // --- Pass 2: time-of-day fallback over last `todDays` days ---
+    if (!matches.length && shot.status_bar_local) {
+      const tz = shot.tz_offset_min ?? -420; // default PDT
+      // captured_at + tz minutes = local time. Compare time-of-day (mod 86400) with wrap.
+      const p2 = [...params, shot.status_bar_local, tz, win, todDays];
+      matches = await q<DetectionMatch>(
+        `WITH d_local AS (
+           SELECT d.id, d.captured_at, d.icao_hex, d.registration,
+                  d.altitude_ft, d.speed_kts AS groundspeed_kts, d.county,
+                  d.latitude, d.longitude,
+                  (d.captured_at + ($${p2.length - 2} || ' minutes')::interval) AS local_ts
+           FROM detections d
+           WHERE ${aircraftPred}
+             AND d.captured_at > now() - ($${p2.length} || ' days')::interval
+         ),
+         scored AS (
+           SELECT *,
+                  LEAST(
+                    abs(extract(epoch from (local_ts::time - $${p2.length - 3}::time))),
+                    86400 - abs(extract(epoch from (local_ts::time - $${p2.length - 3}::time)))
+                  )::int AS delta_s
+           FROM d_local
+         )
+         SELECT id, captured_at, icao_hex, registration, altitude_ft, groundspeed_kts,
+                county, latitude, longitude, delta_s
+         FROM scored
+         WHERE delta_s <= $${p2.length - 1}
+         ORDER BY delta_s ASC, captured_at DESC
+         LIMIT 25`,
+        p2,
+      );
+      if (matches.length) method = "time_of_day";
     }
-    if (shot.tail) {
-      params.push(shot.tail.toUpperCase());
-      aircraftPredicate.push(`upper(d.registration) = $${params.length}`);
-    }
-    const matches = await q<DetectionMatch>(
-      `SELECT d.id, d.captured_at, d.icao_hex, d.registration,
-              d.altitude_ft, d.speed_kts AS groundspeed_kts, d.county,
-              d.latitude, d.longitude,
-              abs(extract(epoch from (d.captured_at - $1::timestamptz)))::int AS delta_s
-       FROM detections d
-       WHERE (${aircraftPredicate.join(" OR ")})
-         AND d.captured_at BETWEEN ($1::timestamptz - ($2 || ' seconds')::interval)
-                               AND ($1::timestamptz + ($2 || ' seconds')::interval)
-       ORDER BY delta_s ASC
-       LIMIT 25`,
-      params,
-    );
+
     const best = matches[0];
     const status =
       matches.length === 0
@@ -366,11 +431,12 @@ export const matchScreenshot = createServerFn({ method: "POST" })
     await q(
       `UPDATE radar_screenshots
          SET match_status=$2, match_count=$3, match_window_s=$4,
-             best_match_id=$5, best_match_delta_s=$6
+             best_match_id=$5, best_match_delta_s=$6, match_method=$7,
+             tail = COALESCE(tail, $8), icao_hex = COALESCE(icao_hex, $9)
        WHERE id=$1`,
-      [shot.id, status, matches.length, win, best?.id ?? null, best?.delta_s ?? null],
+      [shot.id, status, matches.length, win, best?.id ?? null, best?.delta_s ?? null, method, tail, icao],
     );
-    return { matches, status };
+    return { matches, status, method };
   });
 
 // ---------- Update (inline edit of identity / timestamp) ----------
@@ -386,6 +452,7 @@ export const updateScreenshot = createServerFn({ method: "POST" })
       groundspeed_kts?: number | null;
       exif_taken_at?: string | null;
       tz_offset_min?: number | null;
+      status_bar_local?: string | null;
       notes?: string | null;
     }) => d,
   )
@@ -401,7 +468,8 @@ export const updateScreenshot = createServerFn({ method: "POST" })
          groundspeed_kts = COALESCE($7, groundspeed_kts),
          exif_taken_at = COALESCE($8::timestamptz, exif_taken_at),
          tz_offset_min = COALESCE($9, tz_offset_min),
-         notes = COALESCE($10, notes),
+         status_bar_local = COALESCE($10, status_bar_local),
+         notes = COALESCE($11, notes),
          match_status = 'PENDING'
        WHERE id = $1`,
       [
@@ -414,6 +482,7 @@ export const updateScreenshot = createServerFn({ method: "POST" })
         data.groundspeed_kts ?? null,
         data.exif_taken_at ?? null,
         data.tz_offset_min ?? null,
+        data.status_bar_local ?? null,
         data.notes ?? null,
       ],
     );

@@ -172,10 +172,10 @@ export const draftCaseBrief = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("LOVABLE_API_KEY not configured");
+    if (!process.env.LOVABLE_API_KEY && !process.env.OPENAI_API_KEY) {
+      throw new Error("No AI key configured (LOVABLE_API_KEY or OPENAI_API_KEY)");
+    }
     const { neonQuery } = await import("./neon.server");
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
 
     const caseRows = await neonQuery<Record<string, unknown>>(
       `SELECT * FROM cases WHERE case_id = $1 OR id::text = $1 LIMIT 1`,
@@ -212,10 +212,10 @@ export const draftCaseBrief = createServerFn({ method: "POST" })
     const cfg = audienceMap[data.audience];
     const system = `${BASE_IDENTITY}\n\n${cfg.mode === "LEGAL" ? LEGAL_MODE : SNARK_MODE}`;
 
-    const gateway = createLovableAiGatewayProvider(key);
     try {
-      const { text } = await generateText({
-        model: gateway(MODEL),
+      const { generateTextWithFallback } = await import("./ai-fallback.server");
+      const { text, provider } = await generateTextWithFallback({
+        model: MODEL,
         system,
         prompt: `Draft a ${cfg.label}
 
@@ -230,7 +230,7 @@ ${JSON.stringify(vios, null, 2)}
 
 Follow the output structure required by your mode.`,
       });
-      return { ok: true as const, text, mode: cfg.mode };
+      return { ok: true as const, text, mode: cfg.mode, provider };
     } catch (e) {
       return { ok: false as const, error: (e as Error).message ?? "AI gateway error" };
     }

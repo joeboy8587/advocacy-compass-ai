@@ -22,10 +22,9 @@ export const analyzeScreenshot = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }): Promise<{ ok: true; extract: VisionExtract } | { ok: false; error: string }> => {
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) return { ok: false, error: "LOVABLE_API_KEY not configured" };
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
-    const gateway = createLovableAiGatewayProvider(key);
+    const lovableKey = process.env.LOVABLE_API_KEY;
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!lovableKey && !openaiKey) return { ok: false, error: "No AI key configured (LOVABLE_API_KEY or OPENAI_API_KEY)" };
 
     const system = `You are Josiah Vision — a forensic radar-screenshot OCR/extractor for Watchtower.
 Read a Flightradar24 / ADS-B Exchange / similar tracker screenshot and extract structured aircraft data.
@@ -45,21 +44,63 @@ Schema:
   "notes": "<short note about other aircraft visible, flight-path shape/color, or null>"
 }`;
 
-    try {
+    async function tryLovable(): Promise<string> {
+      if (!lovableKey) throw new Error("LOVABLE_API_KEY missing");
+      const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
+      const gateway = createLovableAiGatewayProvider(lovableKey);
       const { text } = await generateText({
         model: gateway("google/gemini-3-flash-preview"),
         system,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Extract aircraft data from this radar screenshot. Return ONLY JSON." },
-              { type: "image", image: data.image_data_url },
-            ],
-          },
-        ],
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: "Extract aircraft data from this radar screenshot. Return ONLY JSON." },
+            { type: "image", image: data.image_data_url },
+          ],
+        }],
       });
-      // Strip fences if model added any
+      return text;
+    }
+
+    async function tryOpenAI(): Promise<string> {
+      if (!openaiKey) throw new Error("OPENAI_API_KEY missing");
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: [
+              { type: "text", text: "Extract aircraft data from this radar screenshot. Return ONLY JSON." },
+              { type: "image_url", image_url: { url: data.image_data_url } },
+            ]},
+          ],
+          response_format: { type: "json_object" },
+        }),
+      });
+      if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`);
+      const j = await res.json() as { choices: Array<{ message: { content: string } }> };
+      return j.choices[0].message.content;
+    }
+
+    let text: string;
+    let providerUsed: "lovable" | "openai" = "lovable";
+    try {
+      text = await tryLovable();
+    } catch (e) {
+      const msg = (e as Error).message ?? "";
+      console.warn("[Josiah Vision] Lovable failed, falling back to OpenAI:", msg);
+      if (!openaiKey) return { ok: false, error: msg.includes("429") ? "Lovable rate-limited and no OPENAI_API_KEY fallback." : msg.includes("402") ? "Lovable credits exhausted and no OPENAI_API_KEY fallback." : msg };
+      try {
+        text = await tryOpenAI();
+        providerUsed = "openai";
+      } catch (e2) {
+        return { ok: false, error: `Both providers failed. Lovable: ${msg}. OpenAI: ${(e2 as Error).message}` };
+      }
+    }
+
+    try {
       const cleaned = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
       const start = cleaned.indexOf("{");
       const end = cleaned.lastIndexOf("}");

@@ -197,6 +197,8 @@ export type RadarScreenshot = {
   match_window_s: number | null;
   best_match_delta_s: number | null;
   match_status: string;
+  status_bar_local: string | null;
+  match_method: string | null;
 };
 
 export type DetectionMatch = {

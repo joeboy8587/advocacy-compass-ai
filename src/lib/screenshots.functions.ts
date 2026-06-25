@@ -99,6 +99,7 @@ Schema:
         return { ok: false, error: `Both providers failed. Lovable: ${msg}. OpenAI: ${(e2 as Error).message}` };
       }
     }
+    void providerUsed;
 
     try {
       const cleaned = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();

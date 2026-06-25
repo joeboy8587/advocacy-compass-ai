@@ -161,8 +161,12 @@ async function ensureSchema() {
           match_window_s int,
           best_match_id uuid,
           best_match_delta_s int,
-          match_status  text NOT NULL DEFAULT 'PENDING'
+          match_status  text NOT NULL DEFAULT 'PENDING',
+          status_bar_local text,
+          match_method  text
         );
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS status_bar_local text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS match_method text;
         CREATE INDEX IF NOT EXISTS radar_screenshots_uploaded_idx ON radar_screenshots(uploaded_at DESC);
         CREATE INDEX IF NOT EXISTS radar_screenshots_tail_idx ON radar_screenshots(tail);
         CREATE INDEX IF NOT EXISTS radar_screenshots_icao_idx ON radar_screenshots(icao_hex);

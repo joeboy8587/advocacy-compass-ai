@@ -125,11 +125,9 @@ export const askInvestigator = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
-    const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("LOVABLE_API_KEY not configured");
-
-    const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
-    const gateway = createLovableAiGatewayProvider(key);
+    if (!process.env.LOVABLE_API_KEY && !process.env.OPENAI_API_KEY) {
+      throw new Error("No AI key configured (LOVABLE_API_KEY or OPENAI_API_KEY)");
+    }
 
     const mode =
       data.mode && data.mode !== "AUTO" ? data.mode : selectMode(data.question);
@@ -155,16 +153,15 @@ export const askInvestigator = createServerFn({ method: "POST" })
     const doctrine = await fetchDoctrineContext(data.question, 3);
 
     try {
-      const { text } = await generateText({
-        model: gateway(MODEL),
+      const { generateTextWithFallback } = await import("./ai-fallback.server");
+      const { text, provider } = await generateTextWithFallback({
+        model: MODEL,
         system,
         prompt: `# Live Corpus Context\n\n${context}${extra}${doctrine ? `\n\n# Doctrine Library (uploaded reference documents)\n\n${doctrine}` : ""}\n\n---\n\n# Operator Question (mode: ${mode})\n\n${data.question}`,
       });
-      return { ok: true as const, text, mode };
+      return { ok: true as const, text, mode, provider };
     } catch (e) {
       const msg = (e as Error).message ?? "AI gateway error";
-      if (msg.includes("429")) return { ok: false as const, error: "Rate limited — wait a moment and retry.", mode };
-      if (msg.includes("402")) return { ok: false as const, error: "Lovable AI credits exhausted. Add credits in workspace settings.", mode };
       return { ok: false as const, error: msg, mode };
     }
   });

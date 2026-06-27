@@ -8,6 +8,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -120,6 +121,18 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AppShell>
         <Outlet />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: "oklch(0.16 0.025 160)",
+              border: "1px solid oklch(0.85 0.27 145 / 0.18)",
+              color: "oklch(0.92 0.05 145)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "12px",
+            },
+          }}
+        />
       </AppShell>
     </QueryClientProvider>
   );

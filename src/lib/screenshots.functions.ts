@@ -184,6 +184,7 @@ export type RadarScreenshot = {
   filename: string;
   file_size: number | null;
   sha256: string;
+  image_data: string | null;
   mime_type: string | null;
   exif_taken_at: string | null;
   tz_offset_min: number | null;
@@ -235,7 +236,7 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
       groundspeed_kts?: number | null;
       notes?: string | null;
       source?: string;
-      status_bar_local?: string | null; // "HH:MM:SS" local 24h, what the phone clock showed
+      status_bar_local?: string | null;
     }) => d,
   )
   .handler(async ({ data }) => {
@@ -289,7 +290,8 @@ export const listScreenshots = createServerFn({ method: "GET" })
       where = `WHERE tail ILIKE $2 OR icao_hex ILIKE $2 OR operator ILIKE $2 OR filename ILIKE $2`;
     }
     return q<RadarScreenshot>(
-      `SELECT id, uploaded_at, source, filename, file_size, sha256, mime_type,
+      `SELECT id, uploaded_at, source, filename, file_size, sha256,
+              image_data, mime_type,
               exif_taken_at, tz_offset_min, tail, icao_hex, operator, aircraft_type,
               altitude_ft, groundspeed_kts, notes,
               match_count, match_window_s, best_match_delta_s, match_status,

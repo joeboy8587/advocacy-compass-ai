@@ -97,9 +97,10 @@ export const getSubjectDossier = createServerFn({ method: "GET" })
         WHERE subject_icao = $1 OR subject_reg = $3
       ),
       cop AS (
-        SELECT bool_or(is_kcso) AS is_kcso, bool_or(is_med) AS is_med
+        SELECT bool_or(kcso_flag) AS is_kcso, bool_or(medical_flag) AS is_med
         FROM canonical_operator_profiles
-        WHERE $3::text IS NOT NULL AND (n_number = $3 OR n_number = $2)
+        WHERE ($1::text IS NOT NULL AND (lower(icao_hex) = lower($1) OR lower(icao24) = lower($1)))
+           OR ($3::text IS NOT NULL AND registration = $3)
       ),
       ap AS (
         SELECT registered_owner FROM aircraft_profiles WHERE icao_hex = $1 LIMIT 1
@@ -217,9 +218,9 @@ export const getSubjectTimeline = createServerFn({ method: "GET" })
        ORDER BY captured_at DESC LIMIT 500)
       UNION ALL
       (SELECT detected_at AS ts, 'ANOMALY'::text AS kind,
-              anomaly_type AS label, NULL, NULL, NULL, NULL,
-              severity::text, NULL
-       FROM ml_anomaly_detections WHERE icao_hex = $1 AND detected_at > now() - ($2 || ' hours')::interval
+              anomaly_type AS label, NULL, county, NULL, NULL,
+              confidence_level::text, NULL
+       FROM ml_anomaly_detections WHERE lower(icao24) = lower($1) AND detected_at > now() - ($2 || ' hours')::interval
        ORDER BY detected_at DESC LIMIT 200)
       UNION ALL
       (SELECT captured_at AS ts, 'VIOLATION'::text AS kind,

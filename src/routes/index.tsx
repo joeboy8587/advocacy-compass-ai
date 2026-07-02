@@ -113,6 +113,7 @@ function Command() {
           </div>
           <div className="divide-y divide-border max-h-[420px] overflow-auto">
             {alerts.isLoading && <Skel />}
+            {alerts.isError && <LoadError label="Live alerts" />}
             {alerts.data?.length === 0 && <Empty msg="No alerts in window." />}
             {alerts.data?.map((a) => (
               <div key={a.id} className="grid grid-cols-[80px_1fr_auto] gap-3 py-2 text-xs items-center">
@@ -147,7 +148,7 @@ function Command() {
           <div className="text-xs uppercase tracking-widest neon-text-green mb-3 flex items-center gap-2">
             <Activity className="size-4" /> 24h Activity
           </div>
-          {timeline.isLoading ? <Skel /> : <Sparkline data={timeline.data ?? []} />}
+          {timeline.isLoading ? <Skel /> : timeline.isError ? <LoadError label="24h activity" /> : <Sparkline data={timeline.data ?? []} />}
         </section>
       </div>
 
@@ -171,6 +172,9 @@ function Command() {
             <tbody>
               {offenders.isLoading && (
                 <tr><td colSpan={6} className="py-4 text-center text-muted-foreground">Loading…</td></tr>
+              )}
+              {offenders.isError && (
+                <tr><td colSpan={6}><LoadError label="repeat offenders" /></td></tr>
               )}
               {offenders.data?.map((o) => (
                 <tr key={o.icao_hex} className="border-b border-border/40 hover:bg-secondary/40">
@@ -231,6 +235,14 @@ function Skel() {
 
 function Empty({ msg }: { msg: string }) {
   return <div className="py-8 text-center text-xs text-muted-foreground uppercase tracking-widest">{msg}</div>;
+}
+
+function LoadError({ label }: { label: string }) {
+  return (
+    <div className="py-6 text-center text-xs text-destructive uppercase tracking-widest">
+      {label} temporarily unavailable
+    </div>
+  );
 }
 
 function freshHint(ageHours: number | null | undefined): string {

@@ -40,7 +40,8 @@ export type Kpis = {
   per table tells the truth without claiming live data when the pipeline is paused.
 */
 export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
-  const rows = await q<Kpis>(`
+  try {
+    const rows = await q<Kpis>(`
     WITH
       ml_max AS (SELECT MAX(detected_at) AS t FROM ml_anomaly_detections),
       vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
@@ -68,7 +69,32 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
       7 AS violations_window_days,
       7 AS incursions_window_days
   `);
-  return rows[0];
+    return rows[0];
+  } catch (error) {
+    console.error(error);
+    return {
+      detections_24h: 0,
+      anomalies_24h: 0,
+      critical_alerts_24h: 0,
+      active_cases: 0,
+      violations_7d: 0,
+      convergences_24h: 0,
+      unique_aircraft_24h: 0,
+      low_alt_24h: 0,
+      spoofing_24h: 0,
+      masked_alt_24h: 0,
+      impossible_physics_24h: 0,
+      coordination_locks: 0,
+      incursions_7d: 0,
+      ml_anomaly_age_hours: null,
+      violations_age_hours: null,
+      incursions_age_hours: null,
+      detections_age_hours: null,
+      spoofing_window_hours: 24,
+      violations_window_days: 7,
+      incursions_window_days: 7,
+    } satisfies Kpis;
+  }
 });
 
 

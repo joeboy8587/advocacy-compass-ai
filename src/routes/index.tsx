@@ -1,3 +1,4 @@
+// build: refresh server-fn manifest
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useSuspenseQuery, queryOptions, useQuery } from "@tanstack/react-query";

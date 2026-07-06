@@ -14,6 +14,7 @@ import { Route as SpoofingRouteImport } from './routes/spoofing'
 import { Route as ScreenshotsRouteImport } from './routes/screenshots'
 import { Route as RegulationsRouteImport } from './routes/regulations'
 import { Route as OperatorsRouteImport } from './routes/operators'
+import { Route as NarrativeRouteImport } from './routes/narrative'
 import { Route as IntelRouteImport } from './routes/intel'
 import { Route as DoctrineRouteImport } from './routes/doctrine'
 import { Route as DetectionsRouteImport } from './routes/detections'
@@ -48,6 +49,11 @@ const RegulationsRoute = RegulationsRouteImport.update({
 const OperatorsRoute = OperatorsRouteImport.update({
   id: '/operators',
   path: '/operators',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NarrativeRoute = NarrativeRouteImport.update({
+  id: '/narrative',
+  path: '/narrative',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IntelRoute = IntelRouteImport.update({
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
+  '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
+  '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
+  '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
@@ -163,6 +172,7 @@ export interface FileRouteTypes {
     | '/detections'
     | '/doctrine'
     | '/intel'
+    | '/narrative'
     | '/operators'
     | '/regulations'
     | '/screenshots'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/detections'
     | '/doctrine'
     | '/intel'
+    | '/narrative'
     | '/operators'
     | '/regulations'
     | '/screenshots'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/detections'
     | '/doctrine'
     | '/intel'
+    | '/narrative'
     | '/operators'
     | '/regulations'
     | '/screenshots'
@@ -215,6 +227,7 @@ export interface RootRouteChildren {
   DetectionsRoute: typeof DetectionsRoute
   DoctrineRoute: typeof DoctrineRoute
   IntelRoute: typeof IntelRoute
+  NarrativeRoute: typeof NarrativeRoute
   OperatorsRoute: typeof OperatorsRoute
   RegulationsRoute: typeof RegulationsRoute
   ScreenshotsRoute: typeof ScreenshotsRoute
@@ -257,6 +270,13 @@ declare module '@tanstack/react-router' {
       path: '/operators'
       fullPath: '/operators'
       preLoaderRoute: typeof OperatorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/narrative': {
+      id: '/narrative'
+      path: '/narrative'
+      fullPath: '/narrative'
+      preLoaderRoute: typeof NarrativeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/intel': {
@@ -364,6 +384,7 @@ const rootRouteChildren: RootRouteChildren = {
   DetectionsRoute: DetectionsRoute,
   DoctrineRoute: DoctrineRoute,
   IntelRoute: IntelRoute,
+  NarrativeRoute: NarrativeRoute,
   OperatorsRoute: OperatorsRoute,
   RegulationsRoute: RegulationsRoute,
   ScreenshotsRoute: ScreenshotsRoute,

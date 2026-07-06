@@ -737,3 +737,93 @@ export const autoBuildCase = createServerFn({ method: "POST" })
       wti_tier: wtiTier,
     } satisfies AutoBuildResult;
   });
+
+// ============================================================
+// CONVERGENCE WINDOW — subject vs specific proxy aircraft within N minutes
+// ============================================================
+export type ConvergenceRow = {
+  local_time: string;
+  subject_reg: string | null;
+  subject_altitude_ft: number | null;
+  proxy_reg: string | null;
+  proxy_altitude_ft: number | null;
+  proxy_anomaly: string | null;
+  dt_sec: number;
+  dist_km: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  county: string | null;
+};
+
+export const getConvergenceWindow = createServerFn({ method: "GET" })
+  .inputValidator(
+    (d: {
+      subjectReg?: string | null;
+      subjectIcao?: string | null;
+      date?: string | null;      // 'YYYY-MM-DD' local; null = last 24h
+      proxies: string[];         // registrations, e.g. ['N528AM','N229AM']
+      windowMin?: number;        // ± minutes, default 5
+    }) => d,
+  )
+  .handler(async ({ data }) => {
+    const proxies = (data.proxies ?? []).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    if (proxies.length === 0) return [] as ConvergenceRow[];
+    const windowMin = Math.min(Math.max(data.windowMin ?? 5, 1), 60);
+    const subjectReg = data.subjectReg?.toUpperCase() ?? null;
+    const subjectIcao = data.subjectIcao?.toLowerCase() ?? null;
+    if (!subjectReg && !subjectIcao) return [] as ConvergenceRow[];
+
+    const rows = await q<ConvergenceRow>(
+      `
+      WITH subj AS (
+        SELECT id, captured_at, registration, altitude_ft, county,
+               latitude::float AS lat, longitude::float AS lon
+        FROM detections
+        WHERE (($1::text IS NOT NULL AND upper(registration) = $1)
+            OR ($2::text IS NOT NULL AND icao_hex = $2))
+          AND ($3::date IS NULL OR captured_at::date = $3::date)
+          AND ($3::date IS NOT NULL OR captured_at > now() - interval '24 hours')
+      ),
+      prox AS (
+        SELECT captured_at, registration, altitude_ft,
+               latitude::float AS lat, longitude::float AS lon
+        FROM detections
+        WHERE upper(registration) = ANY($4::text[])
+          AND ($3::date IS NULL OR captured_at::date = $3::date)
+          AND ($3::date IS NOT NULL OR captured_at > now() - interval '24 hours')
+      ),
+      paired AS (
+        SELECT s.captured_at AS local_time,
+               s.registration AS subject_reg,
+               s.altitude_ft AS subject_altitude_ft,
+               p.registration AS proxy_reg,
+               p.altitude_ft AS proxy_altitude_ft,
+               EXTRACT(EPOCH FROM (p.captured_at - s.captured_at))::int AS dt_sec,
+               CASE WHEN s.lat IS NOT NULL AND p.lat IS NOT NULL THEN
+                 (2 * 6371 * asin(sqrt(
+                   power(sin(radians((p.lat - s.lat)/2)),2) +
+                   cos(radians(s.lat)) * cos(radians(p.lat)) *
+                   power(sin(radians((p.lon - s.lon)/2)),2)
+                 )))
+               END AS dist_km,
+               s.lat AS latitude, s.lon AS longitude, s.county
+        FROM subj s
+        JOIN prox p
+          ON p.captured_at BETWEEN s.captured_at - ($5 || ' minutes')::interval
+                               AND s.captured_at + ($5 || ' minutes')::interval
+      )
+      SELECT p.*,
+             (SELECT string_agg(DISTINCT anomaly_type, ', ')
+                FROM ml_anomaly_detections m
+               WHERE upper(m.aircraft_registration) = p.proxy_reg
+                 AND m.detected_at BETWEEN p.local_time - ($5 || ' minutes')::interval
+                                        AND p.local_time + ($5 || ' minutes')::interval
+             ) AS proxy_anomaly
+      FROM paired p
+      ORDER BY local_time DESC
+      LIMIT 500
+      `,
+      [subjectReg, subjectIcao, data.date ?? null, proxies, windowMin],
+    );
+    return rows;
+  });

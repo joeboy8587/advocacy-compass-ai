@@ -987,3 +987,167 @@ export const getConvergenceWindow = createServerFn({ method: "GET" })
     );
     return rows;
   });
+
+
+// ============================================================
+// WEAKNESS REPORT — quantify the "missing evidence" gaps that
+// Josiah flags so a non-technical reviewer can act on them with
+// a single click. Never mutates; the "apply" fn is separate.
+// ============================================================
+export type WeaknessReport = {
+  case_id: string;
+  primary_county: string | null;
+  county_breakdown: { county: string; n: number; low_alt: number; pct: number }[];
+  suggested_primary_county: string | null;
+  primary_county_stale: boolean;
+  additional_counties: string[];
+  anomaly_breakdown: { anomaly_type: string; n: number; avg_score: number }[];
+  anomaly_total: number;
+  anomaly_score_avg: number;
+  anomaly_score_max: number;
+  detections_used: number;
+  window_days: number;
+};
+
+export const getWeaknessReport = createServerFn({ method: "GET" })
+  .inputValidator((d: { caseId: string }) => {
+    if (!d?.caseId) throw new Error("caseId required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const caseRows = await q<{
+      subject_icao: string | null;
+      subject_reg: string | null;
+      primary_county: string | null;
+    }>(
+      `SELECT subject_icao, subject_reg, primary_county
+         FROM cases WHERE case_id=$1 OR id::text=$1 LIMIT 1`,
+      [data.caseId],
+    );
+    const c = caseRows[0];
+    if (!c) throw new Error("case not found");
+    const icao = c.subject_icao;
+    const reg = c.subject_reg;
+    if (!icao && !reg) {
+      return {
+        case_id: data.caseId,
+        primary_county: c.primary_county,
+        county_breakdown: [],
+        suggested_primary_county: null,
+        primary_county_stale: false,
+        additional_counties: [],
+        anomaly_breakdown: [],
+        anomaly_total: 0,
+        anomaly_score_avg: 0,
+        anomaly_score_max: 0,
+        detections_used: 0,
+        window_days: 30,
+      } satisfies WeaknessReport;
+    }
+
+    const [counties, anoms, totals] = await Promise.all([
+      q<{ county: string; n: number; low_alt: number }>(
+        `SELECT county,
+                count(*)::int AS n,
+                sum(CASE WHEN is_91_227_violator THEN 1 ELSE 0 END)::int AS low_alt
+           FROM detections
+          WHERE ($1::text IS NOT NULL AND icao_hex = $1)
+             OR ($2::text IS NOT NULL AND registration ILIKE $2)
+           AND county IS NOT NULL
+           AND captured_at > now() - interval '30 days'
+          GROUP BY county
+          ORDER BY count(*) DESC
+          LIMIT 20`,
+        [icao, reg],
+      ).catch(() => [] as { county: string; n: number; low_alt: number }[]),
+      icao
+        ? q<{ anomaly_type: string; n: number; avg_score: number }>(
+            `SELECT anomaly_type,
+                    count(*)::int AS n,
+                    round(avg(anomaly_score)::numeric, 3)::float AS avg_score
+               FROM ml_anomaly_detections
+              WHERE lower(icao24) = lower($1)
+                AND detected_at > now() - interval '30 days'
+              GROUP BY anomaly_type
+              ORDER BY count(*) DESC`,
+            [icao],
+          ).catch(() => [] as { anomaly_type: string; n: number; avg_score: number }[])
+        : Promise.resolve([] as { anomaly_type: string; n: number; avg_score: number }[]),
+      icao
+        ? q<{ n: number; avg: number; mx: number }>(
+            `SELECT count(*)::int AS n,
+                    COALESCE(round(avg(anomaly_score)::numeric, 3), 0)::float AS avg,
+                    COALESCE(round(max(anomaly_score)::numeric, 3), 0)::float AS mx
+               FROM ml_anomaly_detections
+              WHERE lower(icao24) = lower($1)
+                AND detected_at > now() - interval '30 days'`,
+            [icao],
+          ).catch(() => [{ n: 0, avg: 0, mx: 0 }])
+        : Promise.resolve([{ n: 0, avg: 0, mx: 0 }]),
+    ]);
+
+    const detTotal = counties.reduce((s, r) => s + r.n, 0) || 1;
+    const breakdown = counties.map((r) => ({
+      county: r.county,
+      n: r.n,
+      low_alt: r.low_alt,
+      pct: Math.round((r.n / detTotal) * 1000) / 10,
+    }));
+    const suggested = breakdown[0]?.county ?? null;
+    const stale = !!(suggested && c.primary_county && suggested.toUpperCase() !== c.primary_county.toUpperCase());
+    const additional = breakdown
+      .slice(1)
+      .filter((b) => b.pct >= 10)
+      .map((b) => b.county);
+
+    const tot = totals[0] ?? { n: 0, avg: 0, mx: 0 };
+
+    return {
+      case_id: data.caseId,
+      primary_county: c.primary_county,
+      county_breakdown: breakdown,
+      suggested_primary_county: suggested,
+      primary_county_stale: stale,
+      additional_counties: additional,
+      anomaly_breakdown: anoms,
+      anomaly_total: tot.n,
+      anomaly_score_avg: tot.avg,
+      anomaly_score_max: tot.mx,
+      detections_used: detTotal,
+      window_days: 30,
+    } satisfies WeaknessReport;
+  });
+
+// Apply a remediation: update primary_county and append an ML-score
+// summary line into reviewer_notes so it shows in the case brief.
+export const applyWeaknessRemediation = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: {
+      caseId: string;
+      newPrimaryCounty?: string | null;
+      mlScoreNote?: string | null;
+    }) => {
+      if (!d?.caseId) throw new Error("caseId required");
+      return d;
+    },
+  )
+  .handler(async ({ data }) => {
+    const sets: string[] = ["updated_at = now()"];
+    const params: unknown[] = [data.caseId];
+    let i = 2;
+    if (data.newPrimaryCounty) {
+      sets.push(`primary_county = $${i++}`);
+      params.push(data.newPrimaryCounty);
+    }
+    if (data.mlScoreNote) {
+      sets.push(
+        `reviewer_notes = trim(both E'\\n' from COALESCE(reviewer_notes,'') || E'\\n' || $${i++})`,
+      );
+      params.push(`[${new Date().toISOString().slice(0, 10)}] ML score note: ${data.mlScoreNote}`);
+    }
+    await q(
+      `UPDATE cases SET ${sets.join(", ")} WHERE case_id=$1 OR id::text=$1`,
+      params,
+    );
+    return { ok: true };
+  });

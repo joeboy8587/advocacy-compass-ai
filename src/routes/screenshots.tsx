@@ -378,10 +378,18 @@ function ScreenshotsPage() {
       }
     } catch (e) {
       const msg = (e as Error).message ?? "Match failed";
-      toast.error(`Match failed: ${msg}`);
+      // Stale client bundle calling a server-fn ID the server no longer knows.
+      // Auto-refresh so the user gets the current bundle instead of a dead error.
+      if (/Invalid server function ID|Server function info not found|Internal server error/i.test(msg)) {
+        toast.error("App updated — refreshing to load the latest matcher…");
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        toast.error(`Match failed: ${msg}`);
+      }
     } finally {
       setMatchingId(null);
     }
+
   }
 
   /* -- edit -- */

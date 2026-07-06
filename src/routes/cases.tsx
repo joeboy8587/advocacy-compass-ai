@@ -67,6 +67,9 @@ function CasesIndex() {
       </header>
 
       <SuggestedPanel />
+      <DuplicatesPanel />
+
+
 
 
 

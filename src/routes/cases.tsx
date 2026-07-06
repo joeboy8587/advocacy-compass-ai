@@ -1,9 +1,11 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, Plus, Sparkles, Loader2 } from "lucide-react";
+import { FolderOpen, Plus, Sparkles, Loader2, Layers, Merge } from "lucide-react";
+import { useState } from "react";
 import { getCases } from "@/lib/watchtower.functions";
-import { getSuggestedCases, createCase } from "@/lib/casework.functions";
+import { getSuggestedCases, createCase, getDuplicateGroups, mergeDuplicateCases } from "@/lib/casework.functions";
 import { z } from "zod";
+
 
 
 const search = z.object({

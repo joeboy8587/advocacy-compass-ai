@@ -477,37 +477,83 @@ export const corroborateCase = createServerFn({ method: "POST" })
     const c = caseRows[0];
     if (!c) throw new Error("case not found");
 
+    // --- ENRICHMENT PASS: backfill convergence_ids if missing so Josiah sees them ---
+    const icao = (c.subject_icao as string | null) ?? null;
+    let convIds = (c.convergence_ids as string[] | null) ?? [];
+    let enrichedConvergences = 0;
+    if (icao && convIds.length === 0) {
+      const convs = await neonQuery<{ id: string }>(
+        `SELECT id::text FROM convergence_events
+          WHERE icao_hex = $1 OR icao24 = $1 LIMIT 500`,
+        [icao],
+      ).catch(() => [] as { id: string }[]);
+      let found = convs;
+      if (found.length === 0) {
+        found = await neonQuery<{ id: string }>(
+          `SELECT DISTINCT l.id::text
+             FROM wtpr_convergent_locks l
+             JOIN corridor_aircraft ca
+               ON ca.wtpr_id IN (l.main_wtpr, l.nb_wtpr)
+            WHERE lower(ca.icao_hex) = lower($1)
+              AND l.machine_confirmed = true
+            LIMIT 500`,
+          [icao],
+        ).catch(() => [] as { id: string }[]);
+      }
+      if (found.length > 0) {
+        convIds = found.map((r) => r.id);
+        enrichedConvergences = convIds.length;
+        await neonQuery(
+          `UPDATE cases SET convergence_ids = $2::uuid[], updated_at = now()
+            WHERE case_id=$1 OR id::text=$1`,
+          [data.caseId, convIds],
+        ).catch(() => {});
+        (c as Record<string, unknown>).convergence_ids = convIds;
+      }
+    }
+
     const det = (c.detection_ids as string[] | null)?.length
-      ? await neonQuery(
+      ? await neonQuery<{
+          captured_at: string;
+          altitude_ft: number | null;
+          county: string | null;
+          is_91_227_violator: boolean | null;
+          is_military: boolean | null;
+        }>(
           `SELECT captured_at, altitude_ft, county, is_91_227_violator, is_military
-           FROM detections WHERE id = ANY($1::uuid[]) ORDER BY captured_at LIMIT 50`,
-          [(c.detection_ids as string[]).slice(0, 50)],
+           FROM detections WHERE id = ANY($1::uuid[]) ORDER BY captured_at LIMIT 200`,
+          [(c.detection_ids as string[]).slice(0, 200)],
         )
       : [];
 
-    const system = `You are Josiah's verification subroutine. You re-read a case file and detection sample and return a STRUCTURED JSON object with these keys ONLY:
+    // --- Heuristic MISSION-TYPE classifier from detection sample ---
+    const missionTypes = classifyMissions(det);
+
+    const system = `You are Josiah's verification subroutine. You re-read a case file, detection sample, and pre-computed mission-type estimates, and return a STRUCTURED JSON object with these keys ONLY:
 {
   "verdict": "CORROBORATED" | "WEAK" | "CONTRADICTED",
   "confidence": 0-100,
   "strengths": ["..."],
   "weaknesses": ["..."],
   "missing_evidence": ["..."],
+  "mission_type_estimates": [{"type":"SURVEILLANCE|PURSUIT|SEARCH_RESCUE|TRANSIT|TRAINING|MEDEVAC|UNKNOWN","confidence":0-100,"rationale":"..."}],
   "recommended_status": "DRAFT" | "REVIEW" | "CONFIRMED" | "DISMISSED",
   "one_line_summary": "..."
 }
-No prose, no markdown, no code fences. Only the JSON object.`;
+Use the heuristic mission estimates as a starting point but refine them from the detection sample. No prose, no markdown, no code fences. Only the JSON object.`;
 
     try {
       const { generateTextWithFallback } = await import("./ai-fallback.server");
       const { text } = await generateTextWithFallback({
         model: "google/gemini-3-flash-preview",
         system,
-        prompt: `## Case file\n${JSON.stringify(c, null, 2)}\n\n## Detection sample (up to 50)\n${JSON.stringify(det, null, 2)}`,
+        prompt: `## Case file\n${JSON.stringify(c, null, 2)}\n\n## Detection sample (up to 200)\n${JSON.stringify(det, null, 2)}\n\n## Heuristic mission-type estimates\n${JSON.stringify(missionTypes, null, 2)}`,
       });
-      // best-effort JSON parse
+      type MissionEst = { type: string; confidence: number; rationale: string };
       type Parsed = {
         verdict?: string; confidence?: number;
         strengths?: string[]; weaknesses?: string[]; missing_evidence?: string[];
+        mission_type_estimates?: MissionEst[];
         recommended_status?: string; one_line_summary?: string;
       };
       let parsed: Parsed | null = null;
@@ -517,12 +563,108 @@ No prose, no markdown, no code fences. Only the JSON object.`;
       } catch {
         parsed = null;
       }
-      return { ok: true as const, raw: text, parsed };
+      // guarantee mission estimates present even if AI drops them
+      if (parsed && (!parsed.mission_type_estimates || parsed.mission_type_estimates.length === 0)) {
+        parsed.mission_type_estimates = missionTypes;
+      }
+      return {
+        ok: true as const,
+        raw: text,
+        parsed,
+        enriched: { convergences_added: enrichedConvergences, convergence_ids_now: convIds.length },
+        heuristic_missions: missionTypes,
+      };
     } catch (e) {
       const msg = (e as Error).message ?? "AI gateway error";
       return { ok: false as const, error: msg };
     }
   });
+
+// Heuristic classifier — no ML, just aviation-sane rules over a detection sample
+function classifyMissions(
+  det: Array<{ captured_at: string; altitude_ft: number | null; county: string | null; is_91_227_violator: boolean | null; is_military: boolean | null }>,
+): Array<{ type: string; confidence: number; rationale: string }> {
+  if (!det.length) return [{ type: "UNKNOWN", confidence: 100, rationale: "No detection sample available." }];
+  const alts = det.map((d) => d.altitude_ft).filter((a): a is number => typeof a === "number");
+  const lowN = alts.filter((a) => a > 0 && a < 1000).length;
+  const veryLowN = alts.filter((a) => a > 0 && a < 500).length;
+  const cruiseN = alts.filter((a) => a >= 1500 && a <= 5000).length;
+  const highN = alts.filter((a) => a > 5000).length;
+  const nullN = det.length - alts.length;
+  const counties = new Set(det.map((d) => d.county).filter(Boolean));
+  const violN = det.filter((d) => d.is_91_227_violator).length;
+  const total = det.length;
+
+  const out: Array<{ type: string; confidence: number; rationale: string }> = [];
+
+  // Sustained low-altitude same-county → SURVEILLANCE
+  if (lowN / total >= 0.4 && counties.size <= 2) {
+    out.push({
+      type: "SURVEILLANCE",
+      confidence: Math.min(95, Math.round((lowN / total) * 100)),
+      rationale: `${lowN}/${total} samples < 1000ft concentrated in ${counties.size} county(s).`,
+    });
+  }
+  // Bursts of very-low-altitude → PURSUIT
+  if (veryLowN >= 5 && veryLowN / Math.max(1, lowN) >= 0.5) {
+    out.push({
+      type: "PURSUIT",
+      confidence: Math.min(85, 40 + veryLowN * 3),
+      rationale: `${veryLowN} samples < 500ft — consistent with active pursuit orbits.`,
+    });
+  }
+  // Wide-area low-alt across multiple counties → SEARCH_RESCUE
+  if (lowN / total >= 0.3 && counties.size >= 3) {
+    out.push({
+      type: "SEARCH_RESCUE",
+      confidence: 60,
+      rationale: `Low-altitude coverage spanning ${counties.size} counties suggests search pattern.`,
+    });
+  }
+  // Mostly cruise altitudes across counties → TRANSIT
+  if (cruiseN / total >= 0.5 && counties.size >= 2) {
+    out.push({
+      type: "TRANSIT",
+      confidence: 70,
+      rationale: `${cruiseN}/${total} samples at 1.5-5k ft across ${counties.size} counties.`,
+    });
+  }
+  // Repeated same-county cruise altitude → TRAINING
+  if (cruiseN / total >= 0.5 && counties.size === 1) {
+    out.push({
+      type: "TRAINING",
+      confidence: 55,
+      rationale: `Sustained cruise altitude in a single county — pattern-work signature.`,
+    });
+  }
+  // High-alt long transits → likely fixed-wing transit
+  if (highN / total >= 0.4) {
+    out.push({
+      type: "TRANSIT",
+      confidence: 65,
+      rationale: `${highN}/${total} samples > 5000ft — cross-region transit profile.`,
+    });
+  }
+  // Suppressed altitude with violations → MASKED SURVEILLANCE bias
+  if (violN >= 3 && nullN / total >= 0.2) {
+    out.push({
+      type: "SURVEILLANCE",
+      confidence: 80,
+      rationale: `${violN} §91.227 violations plus ${nullN} altitude-null frames — masked overhead pattern.`,
+    });
+  }
+  if (out.length === 0) {
+    out.push({ type: "UNKNOWN", confidence: 40, rationale: "No dominant heuristic pattern matched." });
+  }
+  // dedupe by type keeping highest confidence
+  const best = new Map<string, { type: string; confidence: number; rationale: string }>();
+  for (const m of out) {
+    const prev = best.get(m.type);
+    if (!prev || m.confidence > prev.confidence) best.set(m.type, m);
+  }
+  return [...best.values()].sort((a, b) => b.confidence - a.confidence);
+}
+
 
 // ============================================================
 // AUTO-BUILD CASE — one-click evidence rollup for the case subject

@@ -523,3 +523,217 @@ No prose, no markdown, no code fences. Only the JSON object.`;
       return { ok: false as const, error: msg };
     }
   });
+
+// ============================================================
+// AUTO-BUILD CASE — one-click evidence rollup for the case subject
+// Scoops every detection, anomaly, violation, and convergence for the
+// case's ICAO/registration, writes them onto the case row, and scores
+// Bradford-Hill criteria heuristically from what was found.
+// ============================================================
+export type AutoBuildResult = {
+  detections: number;
+  anomalies: number;
+  violations: number;
+  convergences: number;
+  co_fliers: number;
+  counties: number;
+  span_days: number;
+  bh: {
+    strength: boolean;
+    consistency: boolean;
+    specificity: boolean;
+    temporality: boolean;
+    corroboration: boolean;
+    evidence_sufficient: boolean;
+    score: number;
+  };
+  wti_score: number;
+  wti_tier: number;
+};
+
+export const autoBuildCase = createServerFn({ method: "POST" })
+  .inputValidator((d: { caseId: string }) => {
+    if (!d?.caseId) throw new Error("caseId required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const caseRows = await q<{
+      id: string;
+      subject_icao: string | null;
+      subject_reg: string | null;
+    }>(
+      `SELECT id::text, subject_icao, subject_reg
+         FROM cases WHERE case_id=$1 OR id::text=$1 LIMIT 1`,
+      [data.caseId],
+    );
+    const c = caseRows[0];
+    if (!c) throw new Error("case not found");
+    const icao = c.subject_icao;
+    const reg = c.subject_reg;
+    if (!icao && !reg) throw new Error("case has no subject_icao or subject_reg");
+
+    // --- detections ---
+    const dets = await q<{
+      id: string;
+      captured_at: string;
+      county: string | null;
+      low: boolean;
+    }>(
+      `SELECT id::text, captured_at, county,
+              COALESCE(is_91_227_violator, false) AS low
+         FROM detections
+        WHERE ($1::text IS NOT NULL AND icao_hex = $1)
+           OR ($2::text IS NOT NULL AND registration ILIKE $2)
+        ORDER BY captured_at DESC
+        LIMIT 5000`,
+      [icao, reg],
+    );
+
+    // --- anomalies (ml_anomaly_detections keyed by icao24) ---
+    const anoms = icao
+      ? await q<{ id: string }>(
+          `SELECT id::text FROM ml_anomaly_detections
+            WHERE lower(icao24) = lower($1) LIMIT 2000`,
+          [icao],
+        ).catch(() => [])
+      : [];
+
+    // --- violations ---
+    const vios = icao
+      ? await q<{ id: string }>(
+          `SELECT detection_id::text AS id FROM violation_classifications
+            WHERE icao_hex = $1 LIMIT 2000`,
+          [icao],
+        ).catch(() => [])
+      : [];
+
+    // --- convergences (best-effort; schema varies) ---
+    let convs: { id: string }[] = [];
+    if (icao) {
+      convs = await q<{ id: string }>(
+        `SELECT id::text FROM convergence_events
+          WHERE icao_hex = $1 OR icao24 = $1 LIMIT 500`,
+        [icao],
+      ).catch(() => [] as { id: string }[]);
+      if (convs.length === 0) {
+        // fallback via wtpr locks joined through corridor_aircraft (icao membership)
+        convs = await q<{ id: string }>(
+          `SELECT DISTINCT l.id::text
+             FROM wtpr_convergent_locks l
+             JOIN corridor_aircraft ca
+               ON ca.wtpr_id IN (l.main_wtpr, l.nb_wtpr)
+            WHERE lower(ca.icao_hex) = lower($1)
+              AND l.machine_confirmed = true
+            LIMIT 500`,
+          [icao],
+        ).catch(() => [] as { id: string }[]);
+      }
+    }
+
+    // --- co-fliers count (rough corroboration signal, 30d) ---
+    const co = icao
+      ? await q<{ n: number }>(
+          `WITH subj AS (
+             SELECT captured_at, latitude::float lat, longitude::float lon
+               FROM detections
+              WHERE icao_hex = $1
+                AND captured_at > now() - interval '30 days'
+                AND latitude IS NOT NULL AND longitude IS NOT NULL
+              LIMIT 200
+           )
+           SELECT count(DISTINCT d.icao_hex)::int AS n
+             FROM subj s
+             JOIN detections d
+               ON d.icao_hex <> $1
+              AND d.captured_at BETWEEN s.captured_at - interval '2 minutes'
+                                     AND s.captured_at + interval '2 minutes'
+              AND abs(d.latitude::float - s.lat) < 0.1
+              AND abs(d.longitude::float - s.lon) < 0.1`,
+          [icao],
+        ).catch(() => [{ n: 0 }])
+      : [{ n: 0 }];
+    const coFliers = co[0]?.n ?? 0;
+
+    // --- rollups ---
+    const nDet = dets.length;
+    const nLow = dets.filter((d) => d.low).length;
+    const counties = new Set(dets.map((d) => d.county).filter(Boolean)).size;
+    const first = dets.length ? new Date(dets[dets.length - 1].captured_at).getTime() : 0;
+    const last = dets.length ? new Date(dets[0].captured_at).getTime() : 0;
+    const spanDays = first && last ? Math.max(0, Math.round((last - first) / 86_400_000)) : 0;
+
+    // --- Bradford-Hill heuristics ---
+    const bh = {
+      strength: nDet >= 25 || nLow >= 5,
+      consistency: counties >= 2 || spanDays >= 7,
+      specificity: vios.length >= 1 || nLow >= 3,
+      temporality: spanDays >= 3,
+      corroboration: convs.length >= 1 || coFliers >= 2 || anoms.length >= 5,
+    };
+    const bhScore = Object.values(bh).filter(Boolean).length;
+    const evidenceSufficient = bhScore >= 4;
+
+    // --- WTI score (0-100) + tier (1-4) ---
+    const wtiScore = Math.min(
+      100,
+      Math.round(
+        Math.min(nDet, 500) / 10 +            // up to 50
+        Math.min(nLow, 40) * 0.5 +            // up to 20
+        Math.min(vios.length, 20) * 1 +       // up to 20
+        Math.min(convs.length, 10) * 2 +      // up to 20
+        Math.min(anoms.length, 40) * 0.25,    // up to 10
+      ),
+    );
+    const wtiTier = wtiScore >= 80 ? 4 : wtiScore >= 60 ? 3 : wtiScore >= 40 ? 2 : 1;
+
+    // --- write it all back to the case row ---
+    await q(
+      `UPDATE cases SET
+         detection_ids   = $2::uuid[],
+         anomaly_ids     = $3::uuid[],
+         violation_ids   = $4::uuid[],
+         convergence_ids = $5::uuid[],
+         total_events    = $6::int,
+         wti_score       = $7,
+         wti_tier        = $8,
+         bh_strength      = $9,
+         bh_consistency   = $10,
+         bh_specificity   = $11,
+         bh_temporality   = $12,
+         bh_corroboration = $13,
+         bradford_hill_score = $14,
+         evidence_sufficient = $15,
+         updated_at = now()
+       WHERE case_id=$1 OR id::text=$1`,
+      [
+        data.caseId,
+        dets.map((d) => d.id),
+        anoms.map((a) => a.id),
+        vios.map((v) => v.id),
+        convs.map((c2) => c2.id),
+        nDet + anoms.length + vios.length + convs.length,
+        wtiScore,
+        wtiTier,
+        bh.strength,
+        bh.consistency,
+        bh.specificity,
+        bh.temporality,
+        bh.corroboration,
+        bhScore,
+        evidenceSufficient,
+      ],
+    );
+
+    return {
+      detections: nDet,
+      anomalies: anoms.length,
+      violations: vios.length,
+      convergences: convs.length,
+      co_fliers: coFliers,
+      counties,
+      span_days: spanDays,
+      bh: { ...bh, evidence_sufficient: evidenceSufficient, score: bhScore },
+      wti_score: wtiScore,
+      wti_tier: wtiTier,
+    } satisfies AutoBuildResult;
+  });

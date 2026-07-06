@@ -8,7 +8,7 @@ import {
 import { getCaseById, updateCase, getCaseEvidence } from "@/lib/watchtower.functions";
 import {
   getSubjectDossier, getSubjectTimeline, getCoFliers, getSubjectScreenshots,
-  registryCrossCheck, corroborateCase, attachDetectionsToCase,
+  registryCrossCheck, corroborateCase, attachDetectionsToCase, autoBuildCase,
 } from "@/lib/casework.functions";
 
 export const Route = createFileRoute("/cases/$caseId")({

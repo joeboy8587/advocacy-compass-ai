@@ -9,7 +9,7 @@ import { getCaseById, updateCase, getCaseEvidence } from "@/lib/watchtower.funct
 import {
   getSubjectDossier, getSubjectTimeline, getCoFliers, getSubjectScreenshots,
   registryCrossCheck, corroborateCase, attachDetectionsToCase, autoBuildCase,
-  getConvergenceWindow,
+  getConvergenceWindow, getWeaknessReport, applyWeaknessRemediation,
 } from "@/lib/casework.functions";
 
 export const Route = createFileRoute("/cases/$caseId")({
@@ -646,6 +646,182 @@ function VerifyTab({ caseId }: { caseId: string }) {
           <p className="text-xs text-muted-foreground">Run Josiah's verification subroutine to re-read this case, backfill any missing convergence IDs, classify mission types (surveillance / pursuit / SAR / transit / training), and grade the evidence as CORROBORATED, WEAK, or CONTRADICTED.</p>
         )}
       </section>
+
+      <WeaknessRemediationPanel caseId={caseId} />
+    </div>
+  );
+}
+
+// ============================================================
+// WEAKNESS REMEDIATION — turns Josiah's "missing evidence" and
+// "weakness" bullets into one-click fixes: refresh primary_county
+// from actual detection distribution, and pin a real ML anomaly
+// score into the reviewer notes so the "ML score = 0" gap closes.
+// ============================================================
+function WeaknessRemediationPanel({ caseId }: { caseId: string }) {
+  const qc = useQueryClient();
+  const rep = useQuery({
+    queryKey: ["weakness-report", caseId],
+    queryFn: () => getWeaknessReport({ data: { caseId } }),
+  });
+
+  const apply = useMutation({
+    mutationFn: (vars: { newPrimaryCounty?: string | null; mlScoreNote?: string | null }) =>
+      applyWeaknessRemediation({ data: { caseId, ...vars } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["case", caseId] });
+      qc.invalidateQueries({ queryKey: ["weakness-report", caseId] });
+    },
+  });
+
+  const r = rep.data;
+
+  return (
+    <section className="panel scanline p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+          <AlertTriangle className="size-4" /> Weakness &amp; Missing-Evidence Remediation
+        </div>
+        <button
+          onClick={() => rep.refetch()}
+          disabled={rep.isFetching}
+          className="text-[10px] uppercase tracking-widest border border-border px-2 py-1 hover:border-accent disabled:opacity-50"
+        >
+          {rep.isFetching ? <Loader2 className="size-3 animate-spin inline" /> : "Recompute"}
+        </button>
+      </div>
+
+      {rep.isLoading && <div className="text-xs text-muted-foreground">Scanning detections and anomalies…</div>}
+      {rep.isError && <div className="text-xs text-destructive">{(rep.error as Error).message}</div>}
+
+      {r && (
+        <div className="space-y-4 text-xs">
+          {/* Missing evidence #1: primary_county stale */}
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+              County distribution · last {r.window_days}d · {r.detections_used.toLocaleString()} detections
+            </div>
+            {r.county_breakdown.length === 0 ? (
+              <div className="text-muted-foreground italic">No county data on file for this subject.</div>
+            ) : (
+              <div className="border border-border/40">
+                <table className="w-full text-xs">
+                  <thead className="text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary/40">
+                    <tr>
+                      <th className="text-left py-1 px-2">County</th>
+                      <th className="text-right py-1 px-2">Detections</th>
+                      <th className="text-right py-1 px-2">Low-Alt</th>
+                      <th className="text-right py-1 px-2">%</th>
+                      <th className="text-left py-1 px-2">Header</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.county_breakdown.map((b) => {
+                      const isCurrent = b.county.toUpperCase() === (r.primary_county ?? "").toUpperCase();
+                      return (
+                        <tr key={b.county} className="border-t border-border/40">
+                          <td className="py-1 px-2 font-mono">{b.county}</td>
+                          <td className="py-1 px-2 text-right tabular-nums">{b.n.toLocaleString()}</td>
+                          <td className="py-1 px-2 text-right tabular-nums text-destructive">{b.low_alt.toLocaleString()}</td>
+                          <td className="py-1 px-2 text-right tabular-nums">{b.pct}%</td>
+                          <td className="py-1 px-2">
+                            {isCurrent ? (
+                              <span className="text-[10px] neon-text-green">PRIMARY</span>
+                            ) : (
+                              <button
+                                disabled={apply.isPending}
+                                onClick={() => apply.mutate({ newPrimaryCounty: b.county })}
+                                className="text-[10px] uppercase tracking-widest border border-accent text-accent px-2 py-0.5 hover:bg-accent/10 disabled:opacity-50"
+                              >
+                                Set primary
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {r.primary_county_stale && r.suggested_primary_county && (
+              <div className="mt-2 border border-primary/40 bg-primary/5 p-2 rounded-sm text-[11px]">
+                Case header lists <span className="font-mono neon-text-orange">{r.primary_county ?? "—"}</span> as the
+                primary county, but the top-activity county over the last {r.window_days} days is{" "}
+                <span className="font-mono neon-text-green">{r.suggested_primary_county}</span>
+                {r.additional_counties.length > 0 && (
+                  <> · significant additional activity in <span className="font-mono">{r.additional_counties.join(", ")}</span></>
+                )}
+                .
+              </div>
+            )}
+          </div>
+
+          {/* Weakness #1: ML pipeline score = 0 */}
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+              ML anomaly rollup · last {r.window_days}d
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <Stat label="Anomaly events" value={r.anomaly_total.toLocaleString()} tone="orange" />
+              <Stat label="Avg anomaly score" value={r.anomaly_score_avg.toFixed(3)} tone="orange" />
+              <Stat label="Max anomaly score" value={r.anomaly_score_max.toFixed(3)} tone="orange" />
+              <Stat label="Anomaly types" value={r.anomaly_breakdown.length} />
+            </div>
+            {r.anomaly_breakdown.length > 0 && (
+              <div className="mt-2 border border-border/40">
+                <table className="w-full text-xs">
+                  <thead className="text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary/40">
+                    <tr>
+                      <th className="text-left py-1 px-2">Anomaly Type</th>
+                      <th className="text-right py-1 px-2">Events</th>
+                      <th className="text-right py-1 px-2">Avg Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.anomaly_breakdown.map((a) => (
+                      <tr key={a.anomaly_type} className="border-t border-border/40">
+                        <td className="py-1 px-2 font-mono">{a.anomaly_type}</td>
+                        <td className="py-1 px-2 text-right tabular-nums">{a.n.toLocaleString()}</td>
+                        <td className="py-1 px-2 text-right tabular-nums">{a.avg_score.toFixed(3)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {r.anomaly_total > 0 && (
+              <button
+                disabled={apply.isPending}
+                onClick={() =>
+                  apply.mutate({
+                    mlScoreNote: `${r.anomaly_total} anomaly events (avg ${r.anomaly_score_avg.toFixed(3)}, max ${r.anomaly_score_max.toFixed(3)}) across ${r.anomaly_breakdown.length} type(s) — closes "ML score = 0" weakness.`,
+                  })
+                }
+                className="mt-2 text-[10px] uppercase tracking-widest border border-accent text-accent px-2 py-1 hover:bg-accent/10 disabled:opacity-50"
+              >
+                Pin ML rollup into reviewer notes
+              </button>
+            )}
+          </div>
+
+          {apply.isError && (
+            <div className="text-xs text-destructive">{(apply.error as Error).message}</div>
+          )}
+          {apply.isSuccess && (
+            <div className="text-xs neon-text-green">✔ Case updated.</div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: "orange" }) {
+  return (
+    <div className="border border-border/40 p-2">
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-lg tabular-nums font-bold ${tone === "orange" ? "neon-text-orange" : "neon-text-green"}`}>{value}</div>
     </div>
   );
 }

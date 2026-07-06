@@ -699,6 +699,16 @@ export const autoBuildCase = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
+    // Small helper — never let a single query hang the whole build.
+    async function safe<T>(p: Promise<T[]>, fallback: T[] = []): Promise<T[]> {
+      try {
+        return await p;
+      } catch (e) {
+        console.warn("[autoBuildCase] sub-query failed:", (e as Error).message);
+        return fallback;
+      }
+    }
+
     const caseRows = await q<{
       id: string;
       subject_icao: string | null;
@@ -714,52 +724,55 @@ export const autoBuildCase = createServerFn({ method: "POST" })
     const reg = c.subject_reg;
     if (!icao && !reg) throw new Error("case has no subject_icao or subject_reg");
 
-    // --- detections ---
-    const dets = await q<{
-      id: string;
-      captured_at: string;
-      county: string | null;
-      low: boolean;
-    }>(
-      `SELECT id::text, captured_at, county,
-              COALESCE(is_91_227_violator, false) AS low
-         FROM detections
-        WHERE ($1::text IS NOT NULL AND icao_hex = $1)
-           OR ($2::text IS NOT NULL AND registration ILIKE $2)
-        ORDER BY captured_at DESC
-        LIMIT 5000`,
-      [icao, reg],
-    );
+    // Run all evidence-gathering queries in parallel with individual
+    // fallbacks so one slow table cannot bring the whole build down.
+    const [dets, anoms, vios, convsPrimary] = await Promise.all([
+      safe(
+        q<{ id: string; captured_at: string; county: string | null; low: boolean }>(
+          `SELECT id::text, captured_at, county,
+                  COALESCE(is_91_227_violator, false) AS low
+             FROM detections
+            WHERE ($1::text IS NOT NULL AND icao_hex = $1)
+               OR ($2::text IS NOT NULL AND registration ILIKE $2)
+            ORDER BY captured_at DESC
+            LIMIT 2000`,
+          [icao, reg],
+        ),
+      ),
+      icao
+        ? safe(
+            q<{ id: string }>(
+              `SELECT id::text FROM ml_anomaly_detections
+                WHERE lower(icao24) = lower($1) LIMIT 1000`,
+              [icao],
+            ),
+          )
+        : Promise.resolve([] as { id: string }[]),
+      icao
+        ? safe(
+            q<{ id: string }>(
+              `SELECT detection_id::text AS id FROM violation_classifications
+                WHERE icao_hex = $1 LIMIT 1000`,
+              [icao],
+            ),
+          )
+        : Promise.resolve([] as { id: string }[]),
+      icao
+        ? safe(
+            q<{ id: string }>(
+              `SELECT id::text FROM convergence_events
+                WHERE icao_hex = $1 OR icao24 = $1 LIMIT 500`,
+              [icao],
+            ),
+          )
+        : Promise.resolve([] as { id: string }[]),
+    ]);
 
-    // --- anomalies (ml_anomaly_detections keyed by icao24) ---
-    const anoms = icao
-      ? await q<{ id: string }>(
-          `SELECT id::text FROM ml_anomaly_detections
-            WHERE lower(icao24) = lower($1) LIMIT 2000`,
-          [icao],
-        ).catch(() => [])
-      : [];
-
-    // --- violations ---
-    const vios = icao
-      ? await q<{ id: string }>(
-          `SELECT detection_id::text AS id FROM violation_classifications
-            WHERE icao_hex = $1 LIMIT 2000`,
-          [icao],
-        ).catch(() => [])
-      : [];
-
-    // --- convergences (best-effort; schema varies) ---
-    let convs: { id: string }[] = [];
-    if (icao) {
-      convs = await q<{ id: string }>(
-        `SELECT id::text FROM convergence_events
-          WHERE icao_hex = $1 OR icao24 = $1 LIMIT 500`,
-        [icao],
-      ).catch(() => [] as { id: string }[]);
-      if (convs.length === 0) {
-        // fallback via wtpr locks joined through corridor_aircraft (icao membership)
-        convs = await q<{ id: string }>(
+    // Convergence fallback (only if primary returned nothing).
+    let convs = convsPrimary;
+    if (icao && convs.length === 0) {
+      convs = await safe(
+        q<{ id: string }>(
           `SELECT DISTINCT l.id::text
              FROM wtpr_convergent_locks l
              JOIN corridor_aircraft ca
@@ -768,31 +781,36 @@ export const autoBuildCase = createServerFn({ method: "POST" })
               AND l.machine_confirmed = true
             LIMIT 500`,
           [icao],
-        ).catch(() => [] as { id: string }[]);
-      }
+        ),
+      );
     }
 
-    // --- co-fliers count (rough corroboration signal, 30d) ---
+    // Co-fliers — deliberately cheap: sample only 25 subject pings and
+    // let the DB abort under statement_timeout if it still runs long.
     const co = icao
-      ? await q<{ n: number }>(
-          `WITH subj AS (
-             SELECT captured_at, latitude::float lat, longitude::float lon
-               FROM detections
-              WHERE icao_hex = $1
-                AND captured_at > now() - interval '30 days'
-                AND latitude IS NOT NULL AND longitude IS NOT NULL
-              LIMIT 200
-           )
-           SELECT count(DISTINCT d.icao_hex)::int AS n
-             FROM subj s
-             JOIN detections d
-               ON d.icao_hex <> $1
-              AND d.captured_at BETWEEN s.captured_at - interval '2 minutes'
-                                     AND s.captured_at + interval '2 minutes'
-              AND abs(d.latitude::float - s.lat) < 0.1
-              AND abs(d.longitude::float - s.lon) < 0.1`,
-          [icao],
-        ).catch(() => [{ n: 0 }])
+      ? await safe(
+          q<{ n: number }>(
+            `WITH subj AS (
+               SELECT captured_at, latitude::float lat, longitude::float lon
+                 FROM detections
+                WHERE icao_hex = $1
+                  AND captured_at > now() - interval '14 days'
+                  AND latitude IS NOT NULL AND longitude IS NOT NULL
+                ORDER BY captured_at DESC
+                LIMIT 25
+             )
+             SELECT count(DISTINCT d.icao_hex)::int AS n
+               FROM subj s
+               JOIN detections d
+                 ON d.icao_hex <> $1
+                AND d.captured_at BETWEEN s.captured_at - interval '2 minutes'
+                                       AND s.captured_at + interval '2 minutes'
+                AND abs(d.latitude::float - s.lat) < 0.1
+                AND abs(d.longitude::float - s.lon) < 0.1`,
+            [icao],
+          ),
+          [{ n: 0 }],
+        )
       : [{ n: 0 }];
     const coFliers = co[0]?.n ?? 0;
 

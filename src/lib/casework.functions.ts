@@ -1051,10 +1051,10 @@ export const getWeaknessReport = createServerFn({ method: "GET" })
                 count(*)::int AS n,
                 sum(CASE WHEN is_91_227_violator THEN 1 ELSE 0 END)::int AS low_alt
            FROM detections
-          WHERE ($1::text IS NOT NULL AND icao_hex = $1)
-             OR ($2::text IS NOT NULL AND registration ILIKE $2)
-           AND county IS NOT NULL
-           AND captured_at > now() - interval '30 days'
+          WHERE (($1::text IS NOT NULL AND icao_hex = $1)
+                 OR ($2::text IS NOT NULL AND registration ILIKE $2))
+            AND county IS NOT NULL
+            AND captured_at > now() - interval '30 days'
           GROUP BY county
           ORDER BY count(*) DESC
           LIMIT 20`,

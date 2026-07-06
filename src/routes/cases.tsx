@@ -189,3 +189,133 @@ function SuggestedPanel() {
   );
 }
 
+function DuplicatesPanel() {
+  const qc = useQueryClient();
+  const dups = useQuery({
+    queryKey: ["duplicate-groups"],
+    queryFn: () => getDuplicateGroups(),
+    refetchInterval: 5 * 60_000,
+  });
+  const [selection, setSelection] = useState<Record<string, string>>({}); // group_key -> primary case_id
+  const [collapsed, setCollapsed] = useState(true);
+
+  const merge = useMutation({
+    mutationFn: (v: { primary_case_id: string; duplicate_case_ids: string[] }) =>
+      mergeDuplicateCases({ data: v }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["duplicate-groups"] });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+    },
+  });
+
+  if (!dups.data?.length) return null;
+
+  return (
+    <section className="panel scanline p-4 border-primary/40">
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="w-full flex items-center justify-between mb-3"
+      >
+        <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+          <Layers className="size-4" /> Same-Operator Groups · {dups.data.length} clusters found
+        </div>
+        <span className="text-[10px] text-muted-foreground">{collapsed ? "expand" : "collapse"}</span>
+      </button>
+
+      {!collapsed && (
+        <div className="space-y-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+            Pick the primary case to keep; the rest will be dismissed as duplicates with a merge note pointing to the primary.
+          </p>
+          {dups.data.map((g) => {
+            const primary = selection[g.group_key] ?? g.cases[0].case_id;
+            const dupIds = g.cases.map((c) => c.case_id).filter((id) => id !== primary);
+            return (
+              <div key={g.group_key} className="border border-border/60 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                      {g.group_type} match
+                    </div>
+                    <div className="font-bold neon-text-orange truncate">{g.label}</div>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground shrink-0">
+                    {g.cases.length} cases
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {g.cases.map((c) => (
+                    <label
+                      key={c.case_id}
+                      className={`flex items-start gap-2 border p-2 cursor-pointer transition ${
+                        primary === c.case_id
+                          ? "border-accent bg-accent/5"
+                          : "border-border/40 hover:border-accent/50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`primary-${g.group_key}`}
+                        checked={primary === c.case_id}
+                        onChange={() =>
+                          setSelection((s) => ({ ...s, [g.group_key]: c.case_id }))
+                        }
+                        className="mt-1"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <Link
+                            to="/cases/$caseId"
+                            params={{ caseId: c.case_id }}
+                            className="font-mono text-xs neon-text-orange hover:underline truncate"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {c.case_id}
+                          </Link>
+                          <span className="text-[10px] uppercase tracking-widest text-muted-foreground shrink-0">
+                            {c.status} · T{c.wti_tier ?? "—"} · {c.wti_score ?? "—"}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-1">
+                          {c.case_type} · {c.subject_reg ?? c.subject_icao ?? "—"} · {c.primary_county ?? "—"} · {c.total_events ?? 0} events
+                        </div>
+                        {c.auto_summary && (
+                          <p className="text-[10px] text-muted-foreground line-clamp-2 mt-1">
+                            {c.auto_summary}
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <span className="text-[10px] text-muted-foreground">
+                    Will dismiss {dupIds.length} case{dupIds.length === 1 ? "" : "s"}
+                  </span>
+                  <button
+                    disabled={merge.isPending || dupIds.length === 0}
+                    onClick={() =>
+                      merge.mutate({ primary_case_id: primary, duplicate_case_ids: dupIds })
+                    }
+                    className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest border border-accent text-accent px-2 py-1 hover:bg-accent/10 disabled:opacity-50"
+                  >
+                    {merge.isPending ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <Merge className="size-3" />
+                    )}
+                    Merge into {primary}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+

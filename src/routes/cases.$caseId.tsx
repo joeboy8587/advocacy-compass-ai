@@ -105,9 +105,19 @@ function CaseDetail() {
 // OVERVIEW (existing BH, chain, evidence list)
 // ============================================================
 function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId: string }) {
+  const qc = useQueryClient();
   const evQ = useQuery({
     queryKey: ["case-evidence", caseId],
     queryFn: () => getCaseEvidence({ data: { id: caseId } }),
+  });
+
+  const build = useMutation({
+    mutationFn: () => autoBuildCase({ data: { caseId } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["case", caseId] });
+      qc.invalidateQueries({ queryKey: ["case-evidence", caseId] });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+    },
   });
 
   const bh = [
@@ -120,6 +130,43 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
 
   return (
     <div className="space-y-4">
+      <section className="panel scanline p-4 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+            <Sparkles className="size-4" /> Auto-Build Evidence
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Scoop every detection, anomaly, violation, and convergence for this subject,
+            attach them to the case, and re-score Bradford-Hill + WTI.
+          </p>
+          {build.data && (
+            <div className="mt-2 text-[11px] font-mono grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-0.5">
+              <span>Detections: <span className="neon-text-green">{build.data.detections}</span></span>
+              <span>Anomalies: <span className="neon-text-orange">{build.data.anomalies}</span></span>
+              <span>Violations: <span className="text-destructive">{build.data.violations}</span></span>
+              <span>Convergences: <span className="neon-text-orange">{build.data.convergences}</span></span>
+              <span>Co-fliers: {build.data.co_fliers}</span>
+              <span>Counties: {build.data.counties}</span>
+              <span>Span: {build.data.span_days}d</span>
+              <span>WTI: T{build.data.wti_tier} · {build.data.wti_score}</span>
+            </div>
+          )}
+          {build.isError && (
+            <div className="mt-2 text-xs text-destructive">
+              {(build.error as Error)?.message ?? "Auto-build failed"}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => build.mutate()}
+          disabled={build.isPending}
+          className="shrink-0 inline-flex items-center gap-2 px-3 py-2 text-[11px] uppercase tracking-widest bg-accent text-accent-foreground rounded-sm disabled:opacity-50"
+        >
+          {build.isPending ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+          {build.isPending ? "Building…" : "Auto-Build"}
+        </button>
+      </section>
+
       {c.auto_summary && (
         <section className="panel scanline p-5">
           <div className="text-xs uppercase tracking-widest neon-text-green mb-2 flex items-center gap-2">

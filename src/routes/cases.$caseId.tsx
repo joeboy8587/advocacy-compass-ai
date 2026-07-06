@@ -9,6 +9,7 @@ import { getCaseById, updateCase, getCaseEvidence } from "@/lib/watchtower.funct
 import {
   getSubjectDossier, getSubjectTimeline, getCoFliers, getSubjectScreenshots,
   registryCrossCheck, corroborateCase, attachDetectionsToCase, autoBuildCase,
+  getConvergenceWindow,
 } from "@/lib/casework.functions";
 
 export const Route = createFileRoute("/cases/$caseId")({
@@ -166,6 +167,11 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
           {build.isPending ? "Building…" : "Auto-Build"}
         </button>
       </section>
+
+      <ConvergenceWindowPanel
+        subjectReg={c.subject_reg ?? null}
+        subjectIcao={c.subject_icao ?? null}
+      />
 
       {c.auto_summary && (
         <section className="panel scanline p-5">
@@ -787,3 +793,131 @@ function Row({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }) 
 }
 // helper purely to widen the inferred shape; never invoked
 declare function getCaseSafe(): NonNullable<Awaited<ReturnType<typeof getCaseById>>>;
+
+// ============================================================
+// CONVERGENCE WINDOW — subject vs specific proxies within ±N min
+// ============================================================
+function ConvergenceWindowPanel({
+  subjectReg,
+  subjectIcao,
+}: {
+  subjectReg: string | null;
+  subjectIcao: string | null;
+}) {
+  const [proxiesRaw, setProxiesRaw] = useState("N528AM, N229AM, N916HT, N74FF");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [windowMin, setWindowMin] = useState(5);
+  const [ran, setRan] = useState(0);
+
+  const proxies = proxiesRaw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+
+  const q = useQuery({
+    queryKey: ["convergence-window", subjectReg, subjectIcao, date, proxies.join(","), windowMin, ran],
+    queryFn: () =>
+      getConvergenceWindow({
+        data: {
+          subjectReg,
+          subjectIcao,
+          date: date || null,
+          proxies,
+          windowMin,
+        },
+      }),
+    enabled: ran > 0,
+  });
+
+  return (
+    <section className="panel scanline p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Users className="size-4 neon-text-orange" />
+        <div className="text-xs uppercase tracking-widest neon-text-orange">
+          Convergence Window
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          subject {subjectReg ?? subjectIcao ?? "—"} vs proxies · ±{windowMin} min
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_100px_auto] gap-2 mb-3">
+        <input
+          value={proxiesRaw}
+          onChange={(e) => setProxiesRaw(e.target.value)}
+          placeholder="Proxy registrations (comma-separated) e.g. N528AM, N229AM"
+          className="bg-secondary/40 border border-border px-2 py-1.5 text-xs font-mono"
+        />
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="bg-secondary/40 border border-border px-2 py-1.5 text-xs"
+        />
+        <input
+          type="number"
+          min={1}
+          max={60}
+          value={windowMin}
+          onChange={(e) => setWindowMin(Math.max(1, Math.min(60, Number(e.target.value) || 5)))}
+          className="bg-secondary/40 border border-border px-2 py-1.5 text-xs tabular-nums"
+        />
+        <button
+          onClick={() => setRan((n) => n + 1)}
+          disabled={q.isFetching || proxies.length === 0 || (!subjectReg && !subjectIcao)}
+          className="px-3 py-1.5 text-[11px] uppercase tracking-widest bg-accent text-accent-foreground rounded-sm disabled:opacity-50 inline-flex items-center gap-2"
+        >
+          {q.isFetching ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
+          Run
+        </button>
+      </div>
+
+      {q.isError && (
+        <div className="text-xs text-destructive">{(q.error as Error)?.message}</div>
+      )}
+
+      {q.data && (
+        <div className="overflow-x-auto border border-border/40">
+          <table className="w-full text-xs">
+            <thead className="text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary/40">
+              <tr>
+                <th className="text-left py-2 px-3">Local Time</th>
+                <th className="text-left py-2 px-3">Subject</th>
+                <th className="text-right py-2 px-3">Alt (ft)</th>
+                <th className="text-left py-2 px-3">Proxy</th>
+                <th className="text-right py-2 px-3">Alt (ft)</th>
+                <th className="text-right py-2 px-3">Δt (s)</th>
+                <th className="text-right py-2 px-3">Dist (km)</th>
+                <th className="text-left py-2 px-3">Proxy Anomaly</th>
+                <th className="text-left py-2 px-3">County</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.map((r, i) => (
+                <tr key={i} className="border-t border-border/40 hover:bg-secondary/30">
+                  <td className="py-2 px-3 tabular-nums whitespace-nowrap text-muted-foreground">
+                    {new Date(r.local_time).toLocaleString()}
+                  </td>
+                  <td className="py-2 px-3 font-mono neon-text-orange">{r.subject_reg ?? "—"}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{r.subject_altitude_ft?.toLocaleString() ?? "—"}</td>
+                  <td className="py-2 px-3 font-mono neon-text-green">{r.proxy_reg ?? "—"}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{r.proxy_altitude_ft?.toLocaleString() ?? "—"}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{r.dt_sec}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{r.dist_km?.toFixed(2) ?? "—"}</td>
+                  <td className="py-2 px-3 text-destructive">{r.proxy_anomaly ?? "—"}</td>
+                  <td className="py-2 px-3 text-muted-foreground">{r.county ?? "—"}</td>
+                </tr>
+              ))}
+              {q.data.length === 0 && (
+                <tr><td colSpan={9} className="py-6 text-center text-muted-foreground">No convergences in this window.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!q.data && !q.isFetching && (
+        <div className="text-[11px] text-muted-foreground">
+          Enter proxy registrations and click <span className="neon-text-orange">Run</span> to find every moment the subject and a proxy were airborne within ±{windowMin} minutes.
+        </div>
+      )}
+    </section>
+  );
+}

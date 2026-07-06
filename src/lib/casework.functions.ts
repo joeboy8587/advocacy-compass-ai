@@ -1151,3 +1151,106 @@ export const applyWeaknessRemediation = createServerFn({ method: "POST" })
     );
     return { ok: true };
   });
+
+// ============================================================
+// DUPLICATE / SAME-OPERATOR DETECTION
+// ============================================================
+export type DuplicateGroup = {
+  group_key: string;
+  group_type: "OWNER" | "ICAO" | "REG";
+  label: string;
+  cases: {
+    id: string;
+    case_id: string;
+    case_type: string;
+    status: string;
+    wti_tier: number | null;
+    wti_score: number | null;
+    subject_reg: string | null;
+    subject_icao: string | null;
+    subject_owner: string | null;
+    primary_county: string | null;
+    total_events: number | null;
+    opened_at: string;
+    auto_summary: string | null;
+  }[];
+};
+
+export const getDuplicateGroups = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await q<{
+    id: string;
+    case_id: string;
+    case_type: string;
+    status: string;
+    wti_tier: number | null;
+    wti_score: number | null;
+    subject_reg: string | null;
+    subject_icao: string | null;
+    subject_owner: string | null;
+    primary_county: string | null;
+    total_events: number | null;
+    opened_at: string;
+    auto_summary: string | null;
+  }>(
+    `SELECT id::text, case_id, case_type, status, wti_tier, wti_score,
+            subject_reg, subject_icao, subject_owner, primary_county,
+            total_events, opened_at, auto_summary
+     FROM cases
+     WHERE status <> 'DISMISSED'
+     ORDER BY wti_score DESC NULLS LAST, opened_at DESC`,
+  );
+
+  const norm = (s: string | null) => (s ?? "").trim().toUpperCase();
+  const groups = new Map<string, DuplicateGroup>();
+
+  const push = (key: string, type: "OWNER" | "ICAO" | "REG", label: string, r: typeof rows[number]) => {
+    if (!groups.has(key)) groups.set(key, { group_key: key, group_type: type, label, cases: [] });
+    groups.get(key)!.cases.push(r);
+  };
+
+  for (const r of rows) {
+    const owner = norm(r.subject_owner);
+    if (owner && owner !== "MULTI" && owner !== "UNIDENTIFIED SUBJECT") {
+      push(`OWNER:${owner}`, "OWNER", r.subject_owner!, r);
+      continue;
+    }
+    const icao = norm(r.subject_icao);
+    if (icao) {
+      push(`ICAO:${icao}`, "ICAO", r.subject_icao!, r);
+      continue;
+    }
+    const reg = norm(r.subject_reg);
+    if (reg) push(`REG:${reg}`, "REG", r.subject_reg!, r);
+  }
+
+  return Array.from(groups.values())
+    .filter((g) => g.cases.length > 1)
+    .sort((a, b) => b.cases.length - a.cases.length);
+});
+
+export const mergeDuplicateCases = createServerFn({ method: "POST" })
+  .inputValidator((d: { primary_case_id: string; duplicate_case_ids: string[] }) => {
+    if (!d.primary_case_id) throw new Error("primary_case_id required");
+    if (!d.duplicate_case_ids?.length) throw new Error("duplicate_case_ids required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const note = `[${new Date().toISOString().slice(0, 10)}] Merged as duplicate of ${data.primary_case_id}.`;
+    await q(
+      `UPDATE cases
+       SET status = 'DISMISSED',
+           reviewer_notes = COALESCE(reviewer_notes || E'\n', '') || $2
+       WHERE (case_id = ANY($1::text[]) OR id::text = ANY($1::text[]))
+         AND case_id <> $3`,
+      [data.duplicate_case_ids, note, data.primary_case_id],
+    );
+    // Append merge note to primary
+    await q(
+      `UPDATE cases
+       SET reviewer_notes = COALESCE(reviewer_notes || E'\n', '') || $2
+       WHERE case_id = $1 OR id::text = $1`,
+      [data.primary_case_id, `[${new Date().toISOString().slice(0, 10)}] Absorbed duplicates: ${data.duplicate_case_ids.join(", ")}.`],
+    );
+    return { ok: true, merged: data.duplicate_case_ids.length };
+  });
+

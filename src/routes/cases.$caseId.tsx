@@ -168,6 +168,11 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
         </button>
       </section>
 
+      <ConvergenceWindowPanel
+        subjectReg={c.subject_reg ?? null}
+        subjectIcao={c.subject_icao ?? null}
+      />
+
       {c.auto_summary && (
         <section className="panel scanline p-5">
           <div className="text-xs uppercase tracking-widest neon-text-green mb-2 flex items-center gap-2">

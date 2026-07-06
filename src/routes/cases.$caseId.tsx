@@ -557,6 +557,7 @@ function InvestigateTab({ c, caseId }: { c: { subject_icao: string | null; subje
 // VERIFY: Registry cross-check + AI corroboration + sign-off log
 // ============================================================
 function VerifyTab({ caseId }: { caseId: string }) {
+  const qc = useQueryClient();
   const reg = useQuery({
     queryKey: ["regcheck", caseId],
     queryFn: () => registryCrossCheck({ data: { caseId } }),
@@ -564,6 +565,11 @@ function VerifyTab({ caseId }: { caseId: string }) {
 
   const ai = useMutation({
     mutationFn: () => corroborateCase({ data: { caseId } }),
+    onSuccess: () => {
+      // convergence_ids may have been backfilled — refresh case row & evidence
+      qc.invalidateQueries({ queryKey: ["case", caseId] });
+      qc.invalidateQueries({ queryKey: ["case-evidence", caseId] });
+    },
   });
 
   return (
@@ -609,6 +615,12 @@ function VerifyTab({ caseId }: { caseId: string }) {
         {ai.data && "error" in ai.data && (
           <div className="text-xs text-destructive">{ai.data.error}</div>
         )}
+        {ai.data && "enriched" in ai.data && ai.data.enriched && ai.data.enriched.convergences_added > 0 && (
+          <div className="mb-3 text-xs border border-accent/40 bg-accent/10 rounded-sm p-2 neon-text-green">
+            ✔ Backfilled {ai.data.enriched.convergences_added} convergence lock ID(s) onto this case.
+            Overview now shows {ai.data.enriched.convergence_ids_now} convergence(s).
+          </div>
+        )}
         {ai.data && "parsed" in ai.data && ai.data.parsed && (
           <div className="space-y-3 text-xs">
             <div className="flex items-center gap-3">
@@ -621,6 +633,7 @@ function VerifyTab({ caseId }: { caseId: string }) {
               <span className="text-muted-foreground">Recommend: <span className="font-mono">{ai.data.parsed.recommended_status}</span></span>
             </div>
             <p className="italic text-muted-foreground">{ai.data.parsed.one_line_summary}</p>
+            <MissionList items={ai.data.parsed.mission_type_estimates} />
             <CritList title="Strengths" items={ai.data.parsed.strengths} tone="green" />
             <CritList title="Weaknesses" items={ai.data.parsed.weaknesses} tone="orange" />
             <CritList title="Missing Evidence" items={ai.data.parsed.missing_evidence} tone="orange" />
@@ -630,12 +643,38 @@ function VerifyTab({ caseId }: { caseId: string }) {
           <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap">{ai.data.raw}</pre>
         )}
         {!ai.data && !ai.isPending && (
-          <p className="text-xs text-muted-foreground">Run Josiah's verification subroutine to re-read this case and grade the evidence as CORROBORATED, WEAK, or CONTRADICTED.</p>
+          <p className="text-xs text-muted-foreground">Run Josiah's verification subroutine to re-read this case, backfill any missing convergence IDs, classify mission types (surveillance / pursuit / SAR / transit / training), and grade the evidence as CORROBORATED, WEAK, or CONTRADICTED.</p>
         )}
       </section>
     </div>
   );
 }
+
+function MissionList({ items }: { items?: Array<{ type: string; confidence: number; rationale: string }> }) {
+  if (!items?.length) return null;
+  const tone = (t: string) =>
+    t === "SURVEILLANCE" || t === "PURSUIT" ? "border-destructive/50 text-destructive"
+    : t === "SEARCH_RESCUE" || t === "MEDEVAC" ? "border-accent/60 text-accent"
+    : t === "TRAINING" || t === "TRANSIT" ? "border-primary/50 text-primary"
+    : "border-muted-foreground/40 text-muted-foreground";
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-widest mb-1 neon-text-orange">Mission Type Estimates</div>
+      <ul className="space-y-1">
+        {items.map((m, i) => (
+          <li key={i} className="flex items-start gap-2 text-xs">
+            <span className={`px-2 py-0.5 text-[10px] uppercase tracking-widest border rounded-sm shrink-0 ${tone(m.type)}`}>
+              {m.type.replace("_", " ")}
+            </span>
+            <span className="text-muted-foreground shrink-0">{m.confidence}%</span>
+            <span className="text-foreground/80">{m.rationale}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 
 function CritList({ title, items, tone }: { title: string; items?: string[]; tone: "green" | "orange" }) {
   if (!items?.length) return null;

@@ -69,6 +69,18 @@ function BriefView() {
         .text-muted-foreground { color: #555 !important; }
         .text-accent, .text-destructive { color: black !important; }
       }
+      .brief-pdf-mode, .brief-pdf-mode * {
+        background: #ffffff !important;
+        color: #111111 !important;
+        text-shadow: none !important;
+        box-shadow: none !important;
+        border-color: #999999 !important;
+        animation: none !important;
+      }
+      .brief-pdf-mode .neon-text-orange { color: #b45309 !important; }
+      .brief-pdf-mode .neon-text-green { color: #047857 !important; }
+      .brief-pdf-mode .text-muted-foreground { color: #555555 !important; }
+      .brief-pdf-mode .pdf-hide { display: none !important; }
     `;
     document.head.appendChild(style);
     return () => {

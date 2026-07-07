@@ -1254,3 +1254,249 @@ export const mergeDuplicateCases = createServerFn({ method: "POST" })
     return { ok: true, merged: data.duplicate_case_ids.length };
   });
 
+
+// ============================================================
+// FLEET INVESTIGATOR — cover-operator rollup (e.g. AIR METHODS)
+// ============================================================
+export type FleetAircraft = {
+  icao_hex: string;
+  registration: string | null;
+  owner: string | null;
+  aircraft_mfr: string | null;
+  aircraft_model: string | null;
+  detections_30d: number;
+  low_alt_30d: number;
+  anomalies_30d: number;
+  top_county: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  has_open_case: boolean;
+  open_case_id: string | null;
+};
+
+export type FleetInvestigation = {
+  query: string;
+  matched_owner_labels: string[];
+  aircraft: FleetAircraft[];
+  totals: {
+    aircraft_count: number;
+    detections_30d: number;
+    low_alt_30d: number;
+    anomalies_30d: number;
+    counties: string[];
+  };
+};
+
+export const getFleetInvestigation = createServerFn({ method: "GET" })
+  .inputValidator((d: { owner: string }) => {
+    if (!d?.owner?.trim()) throw new Error("owner required");
+    return { owner: d.owner.trim() };
+  })
+  .handler(async ({ data }) => {
+    const like = `%${data.owner.replace(/\s+/g, "%")}%`;
+
+    // Aircraft roster: union FAA master + aircraft_profiles + registered owner cache
+    const roster = await q<{ icao_hex: string; registration: string | null; owner: string | null; aircraft_mfr: string | null; aircraft_model: string | null }>(
+      `
+      WITH candidates AS (
+        SELECT lower(fm.mode_s_code_hex) AS icao_hex,
+               ('N' || fm.n_number) AS registration,
+               fm.name AS owner,
+               far.mfr_name AS aircraft_mfr,
+               far.model_name AS aircraft_model
+        FROM faa_master fm
+        LEFT JOIN faa_aircraft_registry far ON far.code = fm.mfr_mdl_code
+        WHERE fm.name ILIKE $1 AND fm.mode_s_code_hex IS NOT NULL
+        UNION
+        SELECT ap.icao_hex, ap.registration, ap.registered_owner AS owner,
+               NULL::text AS aircraft_mfr, NULL::text AS aircraft_model
+        FROM aircraft_profiles ap
+        WHERE ap.registered_owner ILIKE $1
+      )
+      SELECT icao_hex,
+             MAX(registration) AS registration,
+             MAX(owner) AS owner,
+             MAX(aircraft_mfr) AS aircraft_mfr,
+             MAX(aircraft_model) AS aircraft_model
+      FROM candidates
+      WHERE icao_hex IS NOT NULL
+      GROUP BY icao_hex
+      ORDER BY MAX(registration) NULLS LAST
+      LIMIT 200
+      `,
+      [like],
+    ).catch(() => [] as { icao_hex: string; registration: string | null; owner: string | null; aircraft_mfr: string | null; aircraft_model: string | null }[]);
+
+    if (roster.length === 0) {
+      return {
+        query: data.owner,
+        matched_owner_labels: [],
+        aircraft: [],
+        totals: { aircraft_count: 0, detections_30d: 0, low_alt_30d: 0, anomalies_30d: 0, counties: [] },
+      } satisfies FleetInvestigation;
+    }
+
+    const hexes = roster.map((r) => r.icao_hex.toLowerCase());
+
+    const stats = await q<{
+      icao_hex: string;
+      detections_30d: number;
+      low_alt_30d: number;
+      top_county: string | null;
+      first_seen: string | null;
+      last_seen: string | null;
+    }>(
+      `
+      SELECT lower(d.icao_hex) AS icao_hex,
+             count(*)::int AS detections_30d,
+             sum(CASE WHEN d.is_91_227_violator THEN 1 ELSE 0 END)::int AS low_alt_30d,
+             (SELECT county FROM detections d2
+              WHERE lower(d2.icao_hex) = lower(d.icao_hex)
+                AND d2.captured_at > now() - interval '30 days'
+                AND d2.county IS NOT NULL
+              GROUP BY county ORDER BY count(*) DESC LIMIT 1) AS top_county,
+             MIN(d.captured_at) AS first_seen,
+             MAX(d.captured_at) AS last_seen
+      FROM detections d
+      WHERE lower(d.icao_hex) = ANY($1::text[])
+        AND d.captured_at > now() - interval '30 days'
+      GROUP BY lower(d.icao_hex)
+      `,
+      [hexes],
+    ).catch(() => []);
+
+    const anomalies = await q<{ icao_hex: string; n: number }>(
+      `SELECT lower(icao_hex) AS icao_hex, count(*)::int AS n
+       FROM anomaly_events
+       WHERE lower(icao_hex) = ANY($1::text[])
+         AND detected_at > now() - interval '30 days'
+       GROUP BY lower(icao_hex)`,
+      [hexes],
+    ).catch(() => []);
+
+    const openCases = await q<{ subject_icao: string; case_id: string }>(
+      `SELECT lower(subject_icao) AS subject_icao, case_id
+       FROM cases
+       WHERE lower(subject_icao) = ANY($1::text[])
+         AND status IN ('DRAFT','REVIEW','CONFIRMED','OPEN')`,
+      [hexes],
+    ).catch(() => []);
+
+    const statMap = new Map(stats.map((s) => [s.icao_hex.toLowerCase(), s]));
+    const anomMap = new Map(anomalies.map((a) => [a.icao_hex.toLowerCase(), a.n]));
+    const caseMap = new Map(openCases.map((c) => [c.subject_icao.toLowerCase(), c.case_id]));
+
+    const aircraft: FleetAircraft[] = roster.map((r) => {
+      const h = r.icao_hex.toLowerCase();
+      const s = statMap.get(h);
+      return {
+        icao_hex: h,
+        registration: r.registration,
+        owner: r.owner,
+        aircraft_mfr: r.aircraft_mfr,
+        aircraft_model: r.aircraft_model,
+        detections_30d: s?.detections_30d ?? 0,
+        low_alt_30d: s?.low_alt_30d ?? 0,
+        anomalies_30d: anomMap.get(h) ?? 0,
+        top_county: s?.top_county ?? null,
+        first_seen: s?.first_seen ?? null,
+        last_seen: s?.last_seen ?? null,
+        has_open_case: caseMap.has(h),
+        open_case_id: caseMap.get(h) ?? null,
+      };
+    });
+
+    // Sort: active first, then low-alt count, then detections
+    aircraft.sort((a, b) => {
+      const ad = a.detections_30d > 0 ? 1 : 0;
+      const bd = b.detections_30d > 0 ? 1 : 0;
+      if (ad !== bd) return bd - ad;
+      if (b.low_alt_30d !== a.low_alt_30d) return b.low_alt_30d - a.low_alt_30d;
+      return b.detections_30d - a.detections_30d;
+    });
+
+    const counties = Array.from(new Set(aircraft.map((a) => a.top_county).filter((c): c is string => !!c))).slice(0, 8);
+    const totals = {
+      aircraft_count: aircraft.length,
+      detections_30d: aircraft.reduce((s, a) => s + a.detections_30d, 0),
+      low_alt_30d: aircraft.reduce((s, a) => s + a.low_alt_30d, 0),
+      anomalies_30d: aircraft.reduce((s, a) => s + a.anomalies_30d, 0),
+      counties,
+    };
+    const matched_owner_labels = Array.from(
+      new Set(roster.map((r) => (r.owner ?? "").trim()).filter(Boolean)),
+    ).slice(0, 8);
+
+    return { query: data.owner, matched_owner_labels, aircraft, totals } satisfies FleetInvestigation;
+  });
+
+// ============================================================
+// PROMOTE FLEET → CASE
+// ============================================================
+export const promoteFleetToCase = createServerFn({ method: "POST" })
+  .inputValidator((d: {
+    owner: string;
+    icao_hexes: string[];
+    severity?: string;
+    notes?: string | null;
+  }) => {
+    if (!d?.owner?.trim()) throw new Error("owner required");
+    if (!Array.isArray(d.icao_hexes) || d.icao_hexes.length === 0) throw new Error("at least one aircraft required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const hexes = data.icao_hexes.map((h) => h.toLowerCase());
+
+    // Recent detections for the fleet — attach up to 500 for evidence
+    const dets = await q<{ id: string; county: string | null }>(
+      `SELECT id::text, county FROM detections
+        WHERE lower(icao_hex) = ANY($1::text[])
+          AND captured_at > now() - interval '30 days'
+        ORDER BY captured_at DESC
+        LIMIT 500`,
+      [hexes],
+    ).catch(() => []);
+
+    const topCounty = (() => {
+      const counts: Record<string, number> = {};
+      for (const d of dets) if (d.county) counts[d.county] = (counts[d.county] ?? 0) + 1;
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      return sorted[0]?.[0] ?? null;
+    })();
+
+    const seq = await q<{ year: number; n: number }>(
+      `SELECT EXTRACT(YEAR FROM now())::int AS year,
+              COALESCE(MAX(case_number),0)+1 AS n
+         FROM cases WHERE case_year = EXTRACT(YEAR FROM now())::int`,
+    );
+    const year = seq[0]?.year ?? new Date().getFullYear();
+    const n = seq[0]?.n ?? 1;
+    const case_id = `WT-${year}-${String(n).padStart(4, "0")}`;
+
+    const notes =
+      (data.notes?.trim() ? data.notes.trim() + "\n\n" : "") +
+      `[FLEET CASE] Cover operator: ${data.owner}\n` +
+      `Fleet size: ${hexes.length} aircraft\n` +
+      `Registrations tracked: ${data.icao_hexes.length}\n` +
+      `Detections attached (30d): ${dets.length}`;
+
+    const detIds = dets.map((d) => d.id);
+
+    const rows = await q<{ id: string; case_id: string }>(
+      `INSERT INTO cases (case_id, case_year, case_number, case_type, severity,
+        subject_icao, subject_reg, subject_owner, primary_county, status,
+        reviewer_notes, opened_at, total_events, detection_ids)
+       VALUES ($1,$2,$3,'FLEET_COVER',$4,'MULTI','MULTI',$5,$6,'DRAFT',$7, now(), $8, $9::uuid[])
+       RETURNING id::text, case_id`,
+      [
+        case_id, year, n,
+        data.severity ?? "HIGH",
+        data.owner,
+        topCounty,
+        notes,
+        detIds.length,
+        detIds,
+      ],
+    );
+    return { case_id: rows[0]?.case_id, attached: detIds.length, aircraft: hexes.length };
+  });

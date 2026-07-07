@@ -1,13 +1,48 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { Printer, ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Printer, ArrowLeft, Download, Loader2 } from "lucide-react";
 import { getCaseById, getCaseEvidence } from "@/lib/watchtower.functions";
 
 export const Route = createFileRoute("/cases/$caseId/brief")({
   head: () => ({ meta: [{ title: "Legal Brief // Watchtower" }] }),
   component: BriefView,
 });
+
+async function downloadBriefPdf(el: HTMLElement, filename: string) {
+  const [{ default: html2canvas }, jsPDFModule] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+  const jsPDF = (jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default;
+
+  const canvas = await html2canvas(el, {
+    scale: 2,
+    backgroundColor: "#ffffff",
+    useCORS: true,
+    logging: false,
+  });
+
+  const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "letter" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const imgWidth = pageWidth;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  let heightLeft = imgHeight;
+  let position = 0;
+  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+
+  pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+  heightLeft -= pageHeight;
+  while (heightLeft > 0) {
+    position = heightLeft - imgHeight;
+    pdf.addPage();
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+  }
+  pdf.save(filename);
+}
 
 function BriefView() {
   const { caseId } = Route.useParams();
@@ -34,12 +69,45 @@ function BriefView() {
         .text-muted-foreground { color: #555 !important; }
         .text-accent, .text-destructive { color: black !important; }
       }
+      .brief-pdf-mode, .brief-pdf-mode * {
+        background: #ffffff !important;
+        color: #111111 !important;
+        text-shadow: none !important;
+        box-shadow: none !important;
+        border-color: #999999 !important;
+        animation: none !important;
+      }
+      .brief-pdf-mode .neon-text-orange { color: #b45309 !important; }
+      .brief-pdf-mode .neon-text-green { color: #047857 !important; }
+      .brief-pdf-mode .text-muted-foreground { color: #555555 !important; }
+      .brief-pdf-mode .pdf-hide { display: none !important; }
     `;
     document.head.appendChild(style);
     return () => {
       document.getElementById("brief-print-css")?.remove();
     };
   }, []);
+
+  const briefRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!briefRef.current || downloading) return;
+    setDownloading(true);
+    briefRef.current.classList.add("brief-pdf-mode");
+    try {
+      await downloadBriefPdf(
+        briefRef.current,
+        `${caseQ.data?.case_id ?? "case"}-brief.pdf`,
+      );
+    } catch (e) {
+      console.error("PDF export failed", e);
+      alert("PDF export failed. Try the Print button instead.");
+    } finally {
+      briefRef.current?.classList.remove("brief-pdf-mode");
+      setDownloading(false);
+    }
+  };
 
   if (caseQ.isLoading) return <div className="p-6">Loading brief…</div>;
   if (!caseQ.data) return <div className="p-6 text-destructive">Case not found.</div>;
@@ -54,8 +122,8 @@ function BriefView() {
   ] as const;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6 brief-card">
-      <div className="flex items-center justify-between print:hidden">
+    <div ref={briefRef} className="p-8 max-w-4xl mx-auto space-y-6 brief-card">
+      <div className="flex items-center justify-between print:hidden pdf-hide">
         <Link
           to="/cases/$caseId"
           params={{ caseId }}
@@ -63,12 +131,22 @@ function BriefView() {
         >
           <ArrowLeft className="size-3" /> Back to case
         </Link>
-        <button
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest bg-accent text-accent-foreground hover:bg-accent/80 rounded-sm"
-        >
-          <Printer className="size-3" /> Print / Save PDF
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest bg-accent text-accent-foreground hover:bg-accent/80 rounded-sm disabled:opacity-50"
+          >
+            {downloading ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+            {downloading ? "Building PDF…" : "Download PDF"}
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest border border-accent text-accent hover:bg-accent/10 rounded-sm"
+          >
+            <Printer className="size-3" /> Print
+          </button>
+        </div>
       </div>
 
       <header className="border-b-2 border-border pb-4">

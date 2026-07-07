@@ -76,6 +76,27 @@ function BriefView() {
     };
   }, []);
 
+  const briefRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!briefRef.current || downloading) return;
+    setDownloading(true);
+    briefRef.current.classList.add("brief-pdf-mode");
+    try {
+      await downloadBriefPdf(
+        briefRef.current,
+        `${caseQ.data?.case_id ?? "case"}-brief.pdf`,
+      );
+    } catch (e) {
+      console.error("PDF export failed", e);
+      alert("PDF export failed. Try the Print button instead.");
+    } finally {
+      briefRef.current?.classList.remove("brief-pdf-mode");
+      setDownloading(false);
+    }
+  };
+
   if (caseQ.isLoading) return <div className="p-6">Loading brief…</div>;
   if (!caseQ.data) return <div className="p-6 text-destructive">Case not found.</div>;
   const c = caseQ.data;
@@ -89,8 +110,8 @@ function BriefView() {
   ] as const;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6 brief-card">
-      <div className="flex items-center justify-between print:hidden">
+    <div ref={briefRef} className="p-8 max-w-4xl mx-auto space-y-6 brief-card">
+      <div className="flex items-center justify-between print:hidden pdf-hide">
         <Link
           to="/cases/$caseId"
           params={{ caseId }}
@@ -98,12 +119,22 @@ function BriefView() {
         >
           <ArrowLeft className="size-3" /> Back to case
         </Link>
-        <button
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest bg-accent text-accent-foreground hover:bg-accent/80 rounded-sm"
-        >
-          <Printer className="size-3" /> Print / Save PDF
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest bg-accent text-accent-foreground hover:bg-accent/80 rounded-sm disabled:opacity-50"
+          >
+            {downloading ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+            {downloading ? "Building PDF…" : "Download PDF"}
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest border border-accent text-accent hover:bg-accent/10 rounded-sm"
+          >
+            <Printer className="size-3" /> Print
+          </button>
+        </div>
       </div>
 
       <header className="border-b-2 border-border pb-4">

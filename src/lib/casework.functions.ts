@@ -373,6 +373,90 @@ export const attachDetectionsToCase = createServerFn({ method: "POST" })
   });
 
 // ============================================================
+// ATTACH RELATED AIRCRAFT — resolve tail(s) or hex(es) → detections → case
+// ============================================================
+export const attachAircraftToCase = createServerFn({ method: "POST" })
+  .inputValidator((d: { caseId: string; identifiers: string[]; days?: number }) => {
+    if (!d?.caseId) throw new Error("caseId required");
+    if (!Array.isArray(d.identifiers) || !d.identifiers.length) throw new Error("identifiers required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const days = Math.min(Math.max(data.days ?? 30, 1), 365);
+    const tokens = data.identifiers
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    if (!tokens.length) throw new Error("no valid identifiers");
+
+    // Split into likely-registrations (start with N or letter) vs hex (6 hex chars)
+    const hexes = tokens.filter((t) => /^[0-9A-F]{6}$/.test(t)).map((t) => t.toLowerCase());
+    const regs = tokens.filter((t) => !/^[0-9A-F]{6}$/.test(t));
+
+    // Resolve regs → hexes via detections + faa_master
+    const resolved = regs.length
+      ? await q<{ identifier: string; icao_hex: string | null; registration: string | null }>(
+          `WITH input AS (SELECT unnest($1::text[]) AS ident)
+           SELECT i.ident AS identifier,
+                  COALESCE(
+                    (SELECT d.icao_hex FROM detections d
+                       WHERE d.registration ILIKE i.ident LIMIT 1),
+                    (SELECT lower(fm.mode_s_code_hex) FROM faa_master fm
+                       WHERE fm.n_number = regexp_replace(i.ident,'^N','','i') LIMIT 1)
+                  ) AS icao_hex,
+                  i.ident AS registration
+           FROM input i`,
+          [regs],
+        )
+      : [];
+
+    const allHexes = [
+      ...new Set([...hexes, ...resolved.map((r) => r.icao_hex).filter(Boolean) as string[]]),
+    ];
+    const unresolved = resolved.filter((r) => !r.icao_hex).map((r) => r.identifier);
+
+    if (!allHexes.length) {
+      return { ok: false as const, attached: 0, aircraft: 0, unresolved, error: "No matching aircraft found" };
+    }
+
+    // Grab detection ids for those hexes in window
+    const dets = await q<{ id: string }>(
+      `SELECT id::text FROM detections
+       WHERE icao_hex = ANY($1::text[])
+         AND captured_at > now() - ($2::int || ' days')::interval
+       ORDER BY captured_at DESC
+       LIMIT 5000`,
+      [allHexes, days],
+    );
+
+    if (!dets.length) {
+      return { ok: false as const, attached: 0, aircraft: allHexes.length, unresolved, error: "No detections in window" };
+    }
+
+    const ids = dets.map((r) => r.id);
+    const upd = await q<{ n: number }>(
+      `UPDATE cases
+       SET detection_ids = (
+         SELECT array_agg(DISTINCT x) FROM unnest(COALESCE(detection_ids,'{}'::uuid[]) || $2::uuid[]) AS x
+       ),
+       total_events = COALESCE(total_events,0) + $3::int,
+       updated_at = now()
+       WHERE case_id=$1 OR id::text=$1
+       RETURNING cardinality(detection_ids) AS n`,
+      [data.caseId, ids, ids.length],
+    );
+
+    return {
+      ok: true as const,
+      attached: ids.length,
+      aircraft: allHexes.length,
+      hexes: allHexes,
+      unresolved,
+      total: upd[0]?.n ?? 0,
+    };
+  });
+
+
+// ============================================================
 // MANUAL CASE CREATION
 // ============================================================
 export const createCase = createServerFn({ method: "POST" })

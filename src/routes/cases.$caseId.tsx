@@ -79,7 +79,7 @@ function CaseDetail() {
       </header>
 
       <nav className="flex gap-1 border-b border-border print:hidden">
-        {(["overview", "investigate", "verify", "triage"] as const).map((t) => (
+        {(["overview", "investigate", "osint", "verify", "triage"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -96,6 +96,7 @@ function CaseDetail() {
 
       {tab === "overview" && <OverviewTab c={c} caseId={caseId} />}
       {tab === "investigate" && <InvestigateTab c={c} caseId={caseId} />}
+      {tab === "osint" && <OsintTab c={c} caseId={caseId} />}
       {tab === "verify" && <VerifyTab caseId={caseId} />}
       {tab === "triage" && (
         <TriageTab

@@ -27,9 +27,17 @@ async function ensureTable() {
     );
     CREATE INDEX IF NOT EXISTS doctrine_documents_uploaded_idx ON doctrine_documents (uploaded_at DESC);
     CREATE INDEX IF NOT EXISTS doctrine_documents_classification_idx ON doctrine_documents (classification);
+    CREATE TABLE IF NOT EXISTS case_doctrine_links (
+      case_id text NOT NULL,
+      doctrine_id uuid NOT NULL REFERENCES doctrine_documents(id) ON DELETE CASCADE,
+      linked_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (case_id, doctrine_id)
+    );
+    CREATE INDEX IF NOT EXISTS case_doctrine_links_case_idx ON case_doctrine_links (case_id);
   `);
   _ensured = true;
 }
+
 
 export type DoctrineDoc = {
   id: string;

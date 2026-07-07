@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createHash } from "crypto";
 
 // ============================================================
 // OSINT ENRICHMENT
@@ -14,9 +13,11 @@ async function q<T = unknown>(text: string, params: unknown[] = []): Promise<T[]
   return neonQuery<T>(text, params);
 }
 
-function sha256(s: string): string {
+async function sha256(s: string): Promise<string> {
+  const { createHash } = await import("node:crypto");
   return createHash("sha256").update(s).digest("hex");
 }
+
 
 async function safeFetchJson(url: string, init?: RequestInit, timeoutMs = 8000): Promise<{
   ok: boolean;

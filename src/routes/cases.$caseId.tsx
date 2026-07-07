@@ -12,6 +12,7 @@ import {
   getSubjectDossier, getSubjectTimeline, getCoFliers, getSubjectScreenshots,
   registryCrossCheck, corroborateCase, attachDetectionsToCase, autoBuildCase,
   getConvergenceWindow, getWeaknessReport, applyWeaknessRemediation,
+  attachAircraftToCase,
 } from "@/lib/casework.functions";
 import {
   listCaseDoctrine, ingestDoctrine, unlinkDoctrineFromCase,
@@ -228,7 +229,10 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
         </div>
       </section>
 
+      <RelatedAircraftPanel caseId={caseId} />
+
       <CaseFilesPanel caseId={caseId} />
+
 
       <section className="panel p-5">
 
@@ -1159,6 +1163,88 @@ const CASE_CLASSIFICATIONS = [
   { value: "DOCTRINE", label: "Constitutional" },
   { value: "REFERENCE", label: "Reference" },
 ] as const;
+
+function RelatedAircraftPanel({ caseId }: { caseId: string }) {
+  const qc = useQueryClient();
+  const [input, setInput] = useState("");
+  const [days, setDays] = useState(30);
+  const attach = useMutation({
+    mutationFn: () =>
+      attachAircraftToCase({
+        data: {
+          caseId,
+          days,
+          identifiers: input
+            .split(/[\s,;]+/)
+            .map((s) => s.trim())
+            .filter(Boolean),
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["case", caseId] });
+      qc.invalidateQueries({ queryKey: ["case-evidence", caseId] });
+    },
+  });
+
+  return (
+    <section className="panel scanline p-5">
+      <div className="text-xs uppercase tracking-widest neon-text-orange mb-2 flex items-center gap-2">
+        <Users className="size-4" /> Add Related Aircraft to Case
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        Attach detections from other tails in this operator's fleet (e.g. <code>N912KC, N597E</code>).
+        Accepts registrations (with or without N) or 6-char ICAO hex, comma/space separated.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="N912KC, N597E, aca2b4"
+          className="flex-1 min-w-64 bg-secondary/40 border border-border rounded-sm px-3 py-2 text-sm font-mono"
+        />
+        <label className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1">
+          Days
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value) || 30)}
+            className="w-16 bg-secondary/40 border border-border rounded-sm px-2 py-1 text-xs"
+          />
+        </label>
+        <button
+          onClick={() => attach.mutate()}
+          disabled={attach.isPending || !input.trim()}
+          className="inline-flex items-center gap-2 px-3 py-2 text-[11px] uppercase tracking-widest bg-accent text-accent-foreground rounded-sm disabled:opacity-50"
+        >
+          {attach.isPending ? <Loader2 className="size-3 animate-spin" /> : <Paperclip className="size-3" />}
+          Attach
+        </button>
+      </div>
+      {attach.data && attach.data.ok && (
+        <div className="mt-3 text-xs neon-text-green">
+          ✔ Attached {attach.data.attached} detections across {attach.data.aircraft} aircraft
+          (case total: {attach.data.total}).
+          {attach.data.unresolved.length > 0 && (
+            <div className="text-destructive mt-1">
+              Could not resolve: {attach.data.unresolved.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+      {attach.data && !attach.data.ok && (
+        <div className="mt-3 text-xs text-destructive">
+          {attach.data.error}
+          {attach.data.unresolved?.length > 0 && ` · unresolved: ${attach.data.unresolved.join(", ")}`}
+        </div>
+      )}
+      {attach.isError && (
+        <div className="mt-3 text-xs text-destructive">{(attach.error as Error).message}</div>
+      )}
+    </section>
+  );
+}
 
 function CaseFilesPanel({ caseId }: { caseId: string }) {
   const qc = useQueryClient();

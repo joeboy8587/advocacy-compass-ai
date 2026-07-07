@@ -165,10 +165,14 @@ export const registryCrossCheck = createServerFn({ method: "GET" })
     const c = caseRows[0];
     if (!c) throw new Error("case not found");
     const reg_n = c.subject_reg?.replace(/^N/i, "") ?? null;
-    const fa = reg_n
-      ? await q<{ name: string | null; status_code: string | null; state: string | null; city: string | null }>(
-          `SELECT name, status_code, state, city FROM faa_master WHERE n_number=$1 LIMIT 1`,
-          [reg_n],
+    const fa = (reg_n || c.subject_icao)
+      ? await q<{ name: string | null; status_code: string | null; state: string | null; city: string | null; n_number: string | null }>(
+          `SELECT name, status_code, state, city, n_number
+           FROM faa_master
+           WHERE ($1::text IS NOT NULL AND n_number=$1)
+              OR ($2::text IS NOT NULL AND lower(mode_s_code_hex)=lower($2))
+           LIMIT 1`,
+          [reg_n, c.subject_icao],
         )
       : [];
     const f = fa[0] ?? null;
@@ -176,7 +180,7 @@ export const registryCrossCheck = createServerFn({ method: "GET" })
     if (c.subject_owner && f?.name && c.subject_owner.trim().toLowerCase() !== f.name.trim().toLowerCase()) {
       mismatches.push(`Owner mismatch — case: "${c.subject_owner}" vs FAA: "${f.name}"`);
     }
-    if (reg_n && !f) mismatches.push(`Registration ${c.subject_reg} not found in faa_master`);
+    if ((reg_n || c.subject_icao) && !f) mismatches.push(`Not found in faa_master (reg=${c.subject_reg ?? "—"}, icao=${c.subject_icao ?? "—"})`);
     if (f?.status_code && f.status_code !== "V") mismatches.push(`FAA status code = "${f.status_code}" (not Valid)`);
     return {
       icao_hex: c.subject_icao,

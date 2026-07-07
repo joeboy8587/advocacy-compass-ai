@@ -28,7 +28,7 @@ export const Route = createFileRoute("/cases/$caseId")({
 
 const STATUSES = ["DRAFT", "REVIEW", "CONFIRMED", "PUBLISHED", "DISMISSED"] as const;
 type Status = (typeof STATUSES)[number];
-type Tab = "overview" | "investigate" | "verify" | "triage";
+type Tab = "overview" | "investigate" | "osint" | "verify" | "triage";
 
 function CaseDetail() {
   const { caseId } = Route.useParams();

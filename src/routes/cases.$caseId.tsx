@@ -229,7 +229,10 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
         </div>
       </section>
 
+      <RelatedAircraftPanel caseId={caseId} />
+
       <CaseFilesPanel caseId={caseId} />
+
 
       <section className="panel p-5">
 

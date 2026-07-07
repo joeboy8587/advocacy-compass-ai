@@ -91,6 +91,7 @@ export const ingestDoctrine = createServerFn({ method: "POST" })
       pageCount?: number;
       content: string;
       tags?: string[];
+      linkCaseId?: string;
     }) => {
       if (!d?.title?.trim()) throw new Error("title required");
       if (!d?.sha256) throw new Error("sha256 required");
@@ -126,7 +127,15 @@ export const ingestDoctrine = createServerFn({ method: "POST" })
         data.tags ?? [],
       ],
     );
-    return rows[0];
+    const row = rows[0];
+    if (row && data.linkCaseId) {
+      await q(
+        `INSERT INTO case_doctrine_links (case_id, doctrine_id)
+         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [data.linkCaseId, row.id],
+      );
+    }
+    return row;
   });
 
 export const deleteDoctrine = createServerFn({ method: "POST" })
@@ -136,6 +145,61 @@ export const deleteDoctrine = createServerFn({ method: "POST" })
     await q(`DELETE FROM doctrine_documents WHERE id = $1`, [data.id]);
     return { ok: true };
   });
+
+// -----------------------------------------------------------------------
+// Case ↔ Doctrine linking (Case Files feature)
+// -----------------------------------------------------------------------
+
+export type CaseAttachedDoc = DoctrineDoc & { linked_at: string };
+
+export const listCaseDoctrine = createServerFn({ method: "GET" })
+  .inputValidator((d: { caseId: string }) => {
+    if (!d?.caseId) throw new Error("caseId required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    await ensureTable();
+    return q<CaseAttachedDoc>(
+      `SELECT d.id, d.title, d.source_type, d.classification, d.original_filename,
+              d.sha256, d.byte_size, d.page_count, d.char_count, d.summary, d.tags,
+              d.uploaded_at, l.linked_at
+       FROM case_doctrine_links l
+       JOIN doctrine_documents d ON d.id = l.doctrine_id
+       WHERE l.case_id = $1
+       ORDER BY l.linked_at DESC`,
+      [data.caseId],
+    );
+  });
+
+export const linkDoctrineToCase = createServerFn({ method: "POST" })
+  .inputValidator((d: { caseId: string; doctrineId: string }) => {
+    if (!d?.caseId || !d?.doctrineId) throw new Error("caseId and doctrineId required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    await ensureTable();
+    await q(
+      `INSERT INTO case_doctrine_links (case_id, doctrine_id)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [data.caseId, data.doctrineId],
+    );
+    return { ok: true };
+  });
+
+export const unlinkDoctrineFromCase = createServerFn({ method: "POST" })
+  .inputValidator((d: { caseId: string; doctrineId: string }) => {
+    if (!d?.caseId || !d?.doctrineId) throw new Error("caseId and doctrineId required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    await ensureTable();
+    await q(
+      `DELETE FROM case_doctrine_links WHERE case_id = $1 AND doctrine_id = $2`,
+      [data.caseId, data.doctrineId],
+    );
+    return { ok: true };
+  });
+
 
 // Keyword-match doctrine snippets for Josiah context injection.
 export async function fetchDoctrineContext(query: string, limit = 2): Promise<string> {

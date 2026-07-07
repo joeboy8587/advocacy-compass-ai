@@ -60,8 +60,8 @@ export const getSubjectDossier = createServerFn({ method: "GET" })
       WITH det AS (
         SELECT count(*)::int AS n,
                sum(CASE WHEN captured_at > now() - interval '30 days' THEN 1 ELSE 0 END)::int AS n30,
-               sum(CASE WHEN is_91_227_violator THEN 1 ELSE 0 END)::int AS low,
-               sum(CASE WHEN is_91_227_violator AND captured_at > now() - interval '30 days' THEN 1 ELSE 0 END)::int AS low30,
+               sum(CASE WHEN (is_91_227_violator OR (altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false)) THEN 1 ELSE 0 END)::int AS low,
+               sum(CASE WHEN (is_91_227_violator OR (altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false)) AND captured_at > now() - interval '30 days' THEN 1 ELSE 0 END)::int AS low30,
                bool_or(is_military) AS mil,
                min(captured_at) AS first_seen,
                max(captured_at) AS last_seen
@@ -86,7 +86,8 @@ export const getSubjectDossier = createServerFn({ method: "GET" })
         SELECT name AS owner, city AS owner_city, state AS owner_state, type_registrant,
                year_mfr, status_code
         FROM faa_master
-        WHERE $2::text IS NOT NULL AND n_number = $2
+        WHERE ($2::text IS NOT NULL AND n_number = $2)
+           OR ($1::text IS NOT NULL AND lower(mode_s_code_hex) = lower($1))
         LIMIT 1
       ),
       pri AS (
@@ -134,6 +135,7 @@ export const getSubjectDossier = createServerFn({ method: "GET" })
     );
     return rows[0] ?? null;
   });
+
 
 // ============================================================
 // REGISTRY CROSS-CHECK — compare case-stored values to live FAA registry

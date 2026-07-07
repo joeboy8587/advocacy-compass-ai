@@ -25,6 +25,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CasesNewRouteImport } from './routes/cases.new'
 import { Route as CasesCaseIdRouteImport } from './routes/cases.$caseId'
 import { Route as CasesCaseIdBriefRouteImport } from './routes/cases.$caseId.brief'
+import { Route as ApiPublicOsintNightlyRouteImport } from './routes/api/public/osint.nightly'
 
 const ViolationsRoute = ViolationsRouteImport.update({
   id: '/violations',
@@ -106,6 +107,11 @@ const CasesCaseIdBriefRoute = CasesCaseIdBriefRouteImport.update({
   path: '/brief',
   getParentRoute: () => CasesCaseIdRoute,
 } as any)
+const ApiPublicOsintNightlyRoute = ApiPublicOsintNightlyRouteImport.update({
+  id: '/api/public/osint/nightly',
+  path: '/api/public/osint/nightly',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/new': typeof CasesNewRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
+  '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/new': typeof CasesNewRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
+  '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/cases/$caseId': typeof CasesCaseIdRouteWithChildren
   '/cases/new': typeof CasesNewRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
+  '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/cases/$caseId'
     | '/cases/new'
     | '/cases/$caseId/brief'
+    | '/api/public/osint/nightly'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/cases/$caseId'
     | '/cases/new'
     | '/cases/$caseId/brief'
+    | '/api/public/osint/nightly'
   id:
     | '__root__'
     | '/'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/cases/$caseId'
     | '/cases/new'
     | '/cases/$caseId/brief'
+    | '/api/public/osint/nightly'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -233,6 +245,7 @@ export interface RootRouteChildren {
   ScreenshotsRoute: typeof ScreenshotsRoute
   SpoofingRoute: typeof SpoofingRoute
   ViolationsRoute: typeof ViolationsRoute
+  ApiPublicOsintNightlyRoute: typeof ApiPublicOsintNightlyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -349,6 +362,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CasesCaseIdBriefRouteImport
       parentRoute: typeof CasesCaseIdRoute
     }
+    '/api/public/osint/nightly': {
+      id: '/api/public/osint/nightly'
+      path: '/api/public/osint/nightly'
+      fullPath: '/api/public/osint/nightly'
+      preLoaderRoute: typeof ApiPublicOsintNightlyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -390,6 +410,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScreenshotsRoute: ScreenshotsRoute,
   SpoofingRoute: SpoofingRoute,
   ViolationsRoute: ViolationsRoute,
+  ApiPublicOsintNightlyRoute: ApiPublicOsintNightlyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

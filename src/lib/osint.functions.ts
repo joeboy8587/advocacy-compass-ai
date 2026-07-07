@@ -454,7 +454,7 @@ export const getCaseOsint = createServerFn({ method: "GET" })
     const rows = await q<OsintFinding>(
       `SELECT id::text, source, subject, title, summary, red_flag,
               source_url, wayback_url, sha256, retrieved_at::text AS retrieved_at,
-              payload
+              payload::text AS payload
        FROM osint_findings
        WHERE case_id=$1
        ORDER BY retrieved_at DESC LIMIT 200`,

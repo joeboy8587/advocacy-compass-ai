@@ -5,7 +5,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import {
   ArrowLeft, FileText, Hash, ShieldCheck, Save, CheckCircle2, XCircle, Send,
   FileDown, Loader2, User, Clock, Users, Camera, Search, Sparkles, AlertTriangle,
-  Paperclip, Upload, Trash2, X,
+  Paperclip, Upload, Trash2, X, Globe, Archive, ExternalLink, Radar,
 } from "lucide-react";
 import { getCaseById, updateCase, getCaseEvidence } from "@/lib/watchtower.functions";
 import {

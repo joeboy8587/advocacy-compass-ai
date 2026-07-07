@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   ArrowLeft, FileText, Hash, ShieldCheck, Save, CheckCircle2, XCircle, Send,
   FileDown, Loader2, User, Clock, Users, Camera, Search, Sparkles, AlertTriangle,
+  Paperclip, Upload, Trash2, X,
 } from "lucide-react";
 import { getCaseById, updateCase, getCaseEvidence } from "@/lib/watchtower.functions";
 import {
@@ -11,6 +13,11 @@ import {
   registryCrossCheck, corroborateCase, attachDetectionsToCase, autoBuildCase,
   getConvergenceWindow, getWeaknessReport, applyWeaknessRemediation,
 } from "@/lib/casework.functions";
+import {
+  listCaseDoctrine, ingestDoctrine, unlinkDoctrineFromCase,
+} from "@/lib/doctrine.functions";
+import { sha256Hex, extractText } from "@/lib/file-extract";
+
 
 export const Route = createFileRoute("/cases/$caseId")({
   head: () => ({ meta: [{ title: "Case // Watchtower" }] }),

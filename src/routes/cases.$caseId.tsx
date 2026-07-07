@@ -12,6 +12,7 @@ import {
   getSubjectDossier, getSubjectTimeline, getCoFliers, getSubjectScreenshots,
   registryCrossCheck, corroborateCase, attachDetectionsToCase, autoBuildCase,
   getConvergenceWindow, getWeaknessReport, applyWeaknessRemediation,
+  attachAircraftToCase,
 } from "@/lib/casework.functions";
 import {
   listCaseDoctrine, ingestDoctrine, unlinkDoctrineFromCase,

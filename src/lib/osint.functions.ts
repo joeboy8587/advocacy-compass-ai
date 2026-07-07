@@ -100,7 +100,7 @@ async function insertFinding(row: {
   sourceUrl?: string;
 }) {
   const payloadJson = JSON.stringify(row.payload ?? {});
-  const sha = sha256(`${row.source}|${row.subject}|${payloadJson}`);
+  const sha = await sha256(`${row.source}|${row.subject}|${payloadJson}`);
   // dedupe by (case, source, subject, sha) — same finding same day = no-op
   const existing = await q<{ id: string }>(
     `SELECT id::text FROM osint_findings
@@ -326,7 +326,7 @@ export const deepAdsbPull = createServerFn({ method: "POST" })
       },
     }, 15_000);
     const payloadJson = JSON.stringify(r.json ?? { error: r.text });
-    const sha = sha256(`${endpoint}|${payloadJson}`);
+    const sha = await sha256(`${endpoint}|${payloadJson}`);
     const reg = ((r.json as Record<string, unknown>)?.ac as Array<Record<string, unknown>> | undefined)?.[0]?.r as string | undefined;
     const ins = await q<{ id: string }>(
       `INSERT INTO osint_adsb_pulls (case_id, icao_hex, registration, endpoint, status_code, payload, sha256)

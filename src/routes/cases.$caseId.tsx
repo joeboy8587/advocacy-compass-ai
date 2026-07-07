@@ -228,7 +228,10 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
         </div>
       </section>
 
+      <CaseFilesPanel caseId={caseId} />
+
       <section className="panel p-5">
+
         <div className="text-xs uppercase tracking-widest neon-text-green mb-3">
           Attached Detections ({evQ.data?.detections.length ?? 0})
         </div>

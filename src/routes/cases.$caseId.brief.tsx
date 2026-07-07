@@ -1,13 +1,48 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { Printer, ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Printer, ArrowLeft, Download, Loader2 } from "lucide-react";
 import { getCaseById, getCaseEvidence } from "@/lib/watchtower.functions";
 
 export const Route = createFileRoute("/cases/$caseId/brief")({
   head: () => ({ meta: [{ title: "Legal Brief // Watchtower" }] }),
   component: BriefView,
 });
+
+async function downloadBriefPdf(el: HTMLElement, filename: string) {
+  const [{ default: html2canvas }, jsPDFModule] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+  const jsPDF = (jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default;
+
+  const canvas = await html2canvas(el, {
+    scale: 2,
+    backgroundColor: "#ffffff",
+    useCORS: true,
+    logging: false,
+  });
+
+  const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "letter" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const imgWidth = pageWidth;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  let heightLeft = imgHeight;
+  let position = 0;
+  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+
+  pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+  heightLeft -= pageHeight;
+  while (heightLeft > 0) {
+    position = heightLeft - imgHeight;
+    pdf.addPage();
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+  }
+  pdf.save(filename);
+}
 
 function BriefView() {
   const { caseId } = Route.useParams();

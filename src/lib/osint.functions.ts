@@ -443,7 +443,7 @@ export type OsintFinding = {
   wayback_url: string | null;
   sha256: string;
   retrieved_at: string;
-  payload: Record<string, unknown>;
+  payload: unknown;
 };
 
 export const getCaseOsint = createServerFn({ method: "GET" })

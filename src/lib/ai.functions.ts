@@ -145,6 +145,9 @@ export const askInvestigator = createServerFn({ method: "POST" })
         [data.caseId],
       );
       if (rows[0]) extra = `\n\n## Pre-fetched Case ${data.caseId}\n${JSON.stringify(rows[0], null, 2)}`;
+      const { fetchOsintContextForCase } = await import("./osint.functions");
+      const osintCtx = await fetchOsintContextForCase(data.caseId);
+      if (osintCtx) extra += `\n\n## OSINT Findings for Case ${data.caseId}\n${osintCtx}`;
     }
 
     const context = await gatherContext();

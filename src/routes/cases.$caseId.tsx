@@ -5,7 +5,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import {
   ArrowLeft, FileText, Hash, ShieldCheck, Save, CheckCircle2, XCircle, Send,
   FileDown, Loader2, User, Clock, Users, Camera, Search, Sparkles, AlertTriangle,
-  Paperclip, Upload, Trash2, X,
+  Paperclip, Upload, Trash2, X, Globe, Archive, ExternalLink, Radar,
 } from "lucide-react";
 import { getCaseById, updateCase, getCaseEvidence } from "@/lib/watchtower.functions";
 import {
@@ -17,6 +17,7 @@ import {
 import {
   listCaseDoctrine, ingestDoctrine, unlinkDoctrineFromCase,
 } from "@/lib/doctrine.functions";
+import { getCaseOsint, enrichCase, deepAdsbPull, archiveUrl } from "@/lib/osint.functions";
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
 
@@ -27,7 +28,7 @@ export const Route = createFileRoute("/cases/$caseId")({
 
 const STATUSES = ["DRAFT", "REVIEW", "CONFIRMED", "PUBLISHED", "DISMISSED"] as const;
 type Status = (typeof STATUSES)[number];
-type Tab = "overview" | "investigate" | "verify" | "triage";
+type Tab = "overview" | "investigate" | "osint" | "verify" | "triage";
 
 function CaseDetail() {
   const { caseId } = Route.useParams();
@@ -78,7 +79,7 @@ function CaseDetail() {
       </header>
 
       <nav className="flex gap-1 border-b border-border print:hidden">
-        {(["overview", "investigate", "verify", "triage"] as const).map((t) => (
+        {(["overview", "investigate", "osint", "verify", "triage"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -95,6 +96,7 @@ function CaseDetail() {
 
       {tab === "overview" && <OverviewTab c={c} caseId={caseId} />}
       {tab === "investigate" && <InvestigateTab c={c} caseId={caseId} />}
+      {tab === "osint" && <OsintTab c={c} caseId={caseId} />}
       {tab === "verify" && <VerifyTab caseId={caseId} />}
       {tab === "triage" && (
         <TriageTab
@@ -1425,4 +1427,207 @@ function CaseFilesPanel({ caseId }: { caseId: string }) {
     </section>
   );
 }
+
+// ============================================================
+// OSINT TAB — open-source intelligence enrichment
+// ============================================================
+const SOURCE_LABELS: Record<string, { label: string; icon: typeof Globe; tone: string }> = {
+  OPENSKY: { label: "Flight History (OpenSky)", icon: Radar, tone: "text-accent" },
+  OPENCORPORATES: { label: "Ownership (OpenCorporates)", icon: User, tone: "neon-text-orange" },
+  OPENSANCTIONS: { label: "Watchlist (OpenSanctions)", icon: ShieldCheck, tone: "text-destructive" },
+  OSM_OVERPASS: { label: "Ground-Truth (OpenStreetMap)", icon: Globe, tone: "neon-text-green" },
+  RAPIDAPI_ADSB: { label: "Deep ADS-B (RapidAPI)", icon: Radar, tone: "text-accent" },
+  WAYBACK: { label: "Wayback Archives", icon: Archive, tone: "text-muted-foreground" },
+};
+
+function OsintTab({
+  c,
+  caseId,
+}: {
+  c: { subject_icao: string | null; subject_reg: string | null; subject_owner: string | null };
+  caseId: string;
+}) {
+  const qc = useQueryClient();
+  const osintQ = useQuery({
+    queryKey: ["osint", caseId],
+    queryFn: () => getCaseOsint({ data: { caseId } }),
+  });
+
+  const enrich = useMutation({
+    mutationFn: () => enrichCase({ data: { caseId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["osint", caseId] }),
+  });
+
+  const deep = useMutation({
+    mutationFn: (hex: string) => deepAdsbPull({ data: { caseId, hex } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["osint", caseId] }),
+  });
+
+  const archive = useMutation({
+    mutationFn: (vars: { url: string; findingId?: string }) =>
+      archiveUrl({ data: { caseId, ...vars } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["osint", caseId] }),
+  });
+
+  const findings = osintQ.data?.findings ?? [];
+  const counts = osintQ.data?.counts ?? [];
+  const grouped = findings.reduce<Record<string, typeof findings>>((acc, f) => {
+    (acc[f.source] ||= []).push(f);
+    return acc;
+  }, {});
+  const totalFlags = counts.reduce((s, c2) => s + (c2.flags ?? 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <section className="panel scanline p-5 flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+            <Globe className="size-4" /> OSINT Enrichment
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Pulls open-source intelligence for this case: OpenSky flight history, OpenCorporates
+            ownership, OpenSanctions watchlist screening, and OpenStreetMap ground-truth for the
+            lowest-altitude passes. Every result is SHA-256 sealed, timestamped, and available to
+            Josiah as legal-grade context.
+          </p>
+          <div className="flex flex-wrap gap-2 text-[10px] font-mono">
+            {counts.length === 0 && !osintQ.isLoading && (
+              <span className="text-muted-foreground">No OSINT run yet.</span>
+            )}
+            {counts.map((cc) => (
+              <span
+                key={cc.source}
+                className={`px-2 py-0.5 border ${cc.flags > 0 ? "border-destructive text-destructive" : "border-border text-muted-foreground"}`}
+              >
+                {SOURCE_LABELS[cc.source]?.label ?? cc.source}: {cc.n}
+                {cc.flags > 0 && ` · ${cc.flags} flag`}
+              </span>
+            ))}
+            {totalFlags > 0 && (
+              <span className="px-2 py-0.5 border border-destructive text-destructive font-bold">
+                {totalFlags} RED FLAG{totalFlags === 1 ? "" : "S"}
+              </span>
+            )}
+          </div>
+          {enrich.data && enrich.data.errors.length > 0 && (
+            <div className="text-[11px] text-destructive">
+              Errors: {enrich.data.errors.join(" · ")}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 flex flex-col gap-2">
+          <button
+            onClick={() => enrich.mutate()}
+            disabled={enrich.isPending}
+            className="inline-flex items-center gap-2 px-3 py-2 text-[11px] uppercase tracking-widest bg-accent text-accent-foreground rounded-sm disabled:opacity-50"
+          >
+            {enrich.isPending ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+            {enrich.isPending ? "Enriching…" : "Run Free Enrichers"}
+          </button>
+          {c.subject_icao && (
+            <button
+              onClick={() => deep.mutate(c.subject_icao!)}
+              disabled={deep.isPending}
+              className="inline-flex items-center gap-2 px-3 py-2 text-[11px] uppercase tracking-widest border border-accent text-accent hover:bg-accent/10 rounded-sm disabled:opacity-50"
+              title="Uses your RapidAPI key"
+            >
+              {deep.isPending ? <Loader2 className="size-3 animate-spin" /> : <Radar className="size-3" />}
+              Deep ADS-B Pull
+            </button>
+          )}
+        </div>
+      </section>
+
+      {osintQ.isLoading && (
+        <div className="panel p-5 text-xs text-muted-foreground">Loading OSINT findings…</div>
+      )}
+
+      {!osintQ.isLoading && findings.length === 0 && (
+        <div className="panel p-8 text-center text-xs text-muted-foreground">
+          <Globe className="size-8 mx-auto mb-3 opacity-40" />
+          No OSINT findings yet for this case. Click <span className="neon-text-orange">Run Free Enrichers</span> above to
+          pull OpenSky, OpenCorporates, OpenSanctions, and ground-truth data.
+          {!c.subject_icao && !c.subject_owner && (
+            <div className="mt-2 text-destructive">Case needs a subject ICAO or owner to enrich.</div>
+          )}
+        </div>
+      )}
+
+      {Object.entries(grouped).map(([source, items]) => {
+        const meta = SOURCE_LABELS[source] ?? { label: source, icon: Globe, tone: "" };
+        const Icon = meta.icon;
+        return (
+          <section key={source} className="panel p-5">
+            <div className={`text-xs uppercase tracking-widest mb-3 flex items-center gap-2 ${meta.tone}`}>
+              <Icon className="size-4" /> {meta.label} ({items.length})
+            </div>
+            <ul className="space-y-3">
+              {items.map((f) => (
+                <li
+                  key={f.id}
+                  className={`border rounded-sm p-3 text-xs space-y-1 ${
+                    f.red_flag ? "border-destructive/50 bg-destructive/5" : "border-border/50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium flex items-center gap-2">
+                        {f.red_flag && (
+                          <span className="text-[9px] uppercase tracking-widest px-1 border border-destructive text-destructive">
+                            RED FLAG
+                          </span>
+                        )}
+                        <span className="truncate">{f.title ?? f.subject}</span>
+                      </div>
+                      <p className="text-muted-foreground mt-1">{f.summary}</p>
+                      <div className="text-[10px] text-muted-foreground font-mono mt-1 flex flex-wrap gap-x-3">
+                        <span>subject: {f.subject}</span>
+                        <span>sha: {f.sha256.slice(0, 12)}…</span>
+                        <span>{new Date(f.retrieved_at).toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {f.source_url && (
+                        <a
+                          href={f.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] uppercase tracking-widest text-accent hover:underline inline-flex items-center gap-1"
+                        >
+                          <ExternalLink className="size-3" /> Source
+                        </a>
+                      )}
+                      {f.wayback_url ? (
+                        <a
+                          href={f.wayback_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] uppercase tracking-widest neon-text-green hover:underline inline-flex items-center gap-1"
+                        >
+                          <Archive className="size-3" /> Archived
+                        </a>
+                      ) : f.source_url ? (
+                        <button
+                          onClick={() =>
+                            archive.mutate({ url: f.source_url!, findingId: f.id })
+                          }
+                          disabled={archive.isPending}
+                          className="text-[10px] uppercase tracking-widest text-muted-foreground hover:text-accent inline-flex items-center gap-1 disabled:opacity-50"
+                        >
+                          {archive.isPending ? <Loader2 className="size-3 animate-spin" /> : <Archive className="size-3" />}
+                          Archive to Wayback
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 

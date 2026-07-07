@@ -1146,3 +1146,197 @@ function ConvergenceWindowPanel({
     </section>
   );
 }
+
+// ============================================================
+// CASE FILES — attach PDFs/DOCX/TXT as evidence documents
+// (ingests into doctrine library + links to this case)
+// ============================================================
+const CASE_CLASSIFICATIONS = [
+  { value: "EVIDENCE", label: "Evidence" },
+  { value: "REPORT", label: "Watchtower Report" },
+  { value: "POLICY", label: "Agency Policy" },
+  { value: "REGULATION", label: "Regulation / Statute" },
+  { value: "DOCTRINE", label: "Constitutional" },
+  { value: "REFERENCE", label: "Reference" },
+] as const;
+
+function CaseFilesPanel({ caseId }: { caseId: string }) {
+  const qc = useQueryClient();
+  const ingestFn = useServerFn(ingestDoctrine);
+  const unlinkFn = useServerFn(unlinkDoctrineFromCase);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [classification, setClassification] = useState<string>("EVIDENCE");
+
+  const docsQ = useQuery({
+    queryKey: ["case-doctrine", caseId],
+    queryFn: () => listCaseDoctrine({ data: { caseId } }),
+  });
+
+  const ingestMutation = useMutation({
+    mutationFn: async (file: File) => {
+      setErr(null);
+      setBusy(`Reading ${file.name}…`);
+      const { text, pages } = await extractText(file);
+      if (!text.trim()) throw new Error("No text extracted from document");
+      setBusy(`Hashing ${file.name}…`);
+      const sha = await sha256Hex(new TextEncoder().encode(text).buffer);
+      setBusy(`Attaching ${file.name}…`);
+      const title = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+      return ingestFn({
+        data: {
+          title,
+          sourceType: file.type || "application/octet-stream",
+          classification,
+          originalFilename: file.name,
+          sha256: sha,
+          byteSize: file.size,
+          pageCount: pages,
+          content: text,
+          linkCaseId: caseId,
+        },
+      });
+    },
+    onSuccess: () => {
+      setBusy(null);
+      qc.invalidateQueries({ queryKey: ["case-doctrine", caseId] });
+      qc.invalidateQueries({ queryKey: ["doctrine"] });
+    },
+    onError: (e: Error) => {
+      setBusy(null);
+      setErr(e.message);
+    },
+  });
+
+  const unlinkMutation = useMutation({
+    mutationFn: (doctrineId: string) =>
+      unlinkFn({ data: { caseId, doctrineId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["case-doctrine", caseId] }),
+  });
+
+  const onFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files) return;
+      for (const f of Array.from(files)) {
+        try {
+          await ingestMutation.mutateAsync(f);
+        } catch {
+          break;
+        }
+      }
+    },
+    [ingestMutation],
+  );
+
+  const list = docsQ.data ?? [];
+
+  return (
+    <section
+      className="panel p-5"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        onFiles(e.dataTransfer.files);
+      }}
+    >
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+            <Paperclip className="size-4" /> Case Files ({list.length})
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Drop PDFs, DOCX, or TXT here to attach as evidence. Files are SHA-256 sealed and
+            fed to Josiah as context for this case.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={classification}
+            onChange={(e) => setClassification(e.target.value)}
+            className="bg-secondary/30 border border-border rounded-sm text-[11px] px-2 py-1 uppercase tracking-widest"
+          >
+            {CASE_CLASSIFICATIONS.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={!!busy}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-[11px] uppercase tracking-widest rounded-sm border border-accent text-accent hover:bg-accent/10 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
+            Attach File
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+            multiple
+            className="hidden"
+            onChange={(e) => onFiles(e.target.files)}
+          />
+        </div>
+      </div>
+
+      {busy && (
+        <div className="text-[11px] text-accent flex items-center gap-2 mb-2">
+          <Loader2 className="size-3 animate-spin" /> {busy}
+        </div>
+      )}
+      {err && (
+        <div className="text-[11px] border border-primary text-primary rounded-sm px-2 py-1 mb-2 flex items-center justify-between">
+          <span>⚠ {err}</span>
+          <button onClick={() => setErr(null)}><X className="size-3" /></button>
+        </div>
+      )}
+
+      {list.length === 0 ? (
+        <div className="border border-dashed border-border/50 rounded-sm p-6 text-center text-[11px] text-muted-foreground">
+          <Upload className="size-5 mx-auto mb-2 opacity-40" />
+          Drop evidence files here (PDF, DOCX, TXT) or click Attach File above.
+        </div>
+      ) : (
+        <ul className="space-y-1">
+          {list.map((d) => (
+            <li
+              key={d.id}
+              className="flex items-center justify-between gap-3 border-b border-border/40 py-2 text-xs"
+            >
+              <div className="min-w-0 flex-1">
+                <Link
+                  to="/doctrine"
+                  search={{ id: d.id }}
+                  className="font-medium truncate hover:text-accent block"
+                  title={d.title}
+                >
+                  {d.title}
+                </Link>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-widest mt-0.5 flex items-center gap-2">
+                  <span className="text-accent">{d.classification}</span>
+                  {d.page_count && <span>{d.page_count}p</span>}
+                  <span>{Math.round((d.char_count ?? 0) / 1000)}k chars</span>
+                  <span className="font-mono normal-case tracking-normal">
+                    {d.sha256.slice(0, 10)}…
+                  </span>
+                  <span>{new Date(d.linked_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (confirm(`Unlink "${d.title}" from this case?`)) unlinkMutation.mutate(d.id);
+                }}
+                disabled={unlinkMutation.isPending}
+                className="text-muted-foreground hover:text-destructive disabled:opacity-40"
+                title="Unlink from case"
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+

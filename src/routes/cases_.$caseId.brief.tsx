@@ -11,7 +11,7 @@ export const Route = createFileRoute("/cases_/$caseId/brief")({
 
 async function downloadBriefPdf(el: HTMLElement, filename: string) {
   const [{ default: html2canvas }, jsPDFModule] = await Promise.all([
-    import("html2canvas"),
+    import("html2canvas-pro"),
     import("jspdf"),
   ]);
   const jsPDF = (jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default;

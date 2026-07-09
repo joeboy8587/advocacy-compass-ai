@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Printer, ArrowLeft, Download, Loader2 } from "lucide-react";
 import { getCaseById, getCaseEvidence } from "@/lib/watchtower.functions";
 
-export const Route = createFileRoute("/cases/$caseId/brief")({
+export const Route = createFileRoute("/cases_/$caseId/brief")({
   head: () => ({ meta: [{ title: "Legal Brief // Watchtower" }] }),
   component: BriefView,
 });

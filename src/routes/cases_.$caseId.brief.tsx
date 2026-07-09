@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { Printer, ArrowLeft, Download, Loader2 } from "lucide-react";
 import { getCaseById, getCaseEvidence } from "@/lib/watchtower.functions";
 
-export const Route = createFileRoute("/cases/$caseId/brief")({
+export const Route = createFileRoute("/cases_/$caseId/brief")({
   head: () => ({ meta: [{ title: "Legal Brief // Watchtower" }] }),
   component: BriefView,
 });
 
 async function downloadBriefPdf(el: HTMLElement, filename: string) {
   const [{ default: html2canvas }, jsPDFModule] = await Promise.all([
-    import("html2canvas"),
+    import("html2canvas-pro"),
     import("jspdf"),
   ]);
   const jsPDF = (jsPDFModule as any).jsPDF ?? (jsPDFModule as any).default;

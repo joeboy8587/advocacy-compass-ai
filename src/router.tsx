@@ -34,7 +34,21 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
 }
 
 export const getRouter = () => {
-  const queryClient = new QueryClient();
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        // Recover automatically from transient server-fn 5xx / cold-start hiccups
+        retry: (failureCount, error: any) => {
+          const status = error?.status ?? error?.response?.status;
+          if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
+          return failureCount < 3;
+        },
+        retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+        staleTime: 15_000,
+        refetchOnWindowFocus: false,
+      },
+    },
+  });
 
   const router = createRouter({
     routeTree,

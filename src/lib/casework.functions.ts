@@ -657,6 +657,34 @@ Use the heuristic mission estimates as a starting point but refine them from the
       if (parsed && (!parsed.mission_type_estimates || parsed.mission_type_estimates.length === 0)) {
         parsed.mission_type_estimates = missionTypes;
       }
+
+      // Persist verification result to the case record so review survives page reloads
+      if (parsed) {
+        const verdict = parsed.verdict ?? null;
+        const bhScore =
+          verdict === "CORROBORATED" ? 8.0 :
+          verdict === "WEAK" ? 4.0 :
+          verdict === "CONTRADICTED" ? 1.0 : null;
+        const evidenceSufficient = verdict === "CORROBORATED";
+        await neonQuery(
+          `UPDATE cases SET
+             verification         = $2::jsonb,
+             mission_types        = $3::jsonb,
+             bradford_hill_score  = COALESCE($4::numeric, bradford_hill_score),
+             evidence_sufficient  = COALESCE($5::boolean, evidence_sufficient),
+             verified_at          = now(),
+             updated_at           = now()
+           WHERE case_id=$1 OR id::text=$1`,
+          [
+            data.caseId,
+            JSON.stringify(parsed),
+            JSON.stringify(parsed.mission_type_estimates ?? missionTypes),
+            bhScore,
+            evidenceSufficient,
+          ],
+        ).catch(() => {});
+      }
+
       return {
         ok: true as const,
         raw: text,

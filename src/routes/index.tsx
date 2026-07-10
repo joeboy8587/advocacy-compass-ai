@@ -39,11 +39,9 @@ export const Route = createFileRoute("/")({
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(kpisOpts),
   component: Command,
-  errorComponent: ({ error, reset }) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { LoadErrorPanel } = require("@/components/LoadErrorPanel");
-    return <LoadErrorPanel error={error} reset={reset} title="Command center didn't load" />;
-  },
+  errorComponent: ({ error, reset }) => (
+    <LoadErrorPanel error={error} reset={reset} title="Command center didn't load" />
+  ),
 });
 
 function Command() {

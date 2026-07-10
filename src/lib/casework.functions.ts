@@ -657,6 +657,34 @@ Use the heuristic mission estimates as a starting point but refine them from the
       if (parsed && (!parsed.mission_type_estimates || parsed.mission_type_estimates.length === 0)) {
         parsed.mission_type_estimates = missionTypes;
       }
+
+      // Persist verification result to the case record so review survives page reloads
+      if (parsed) {
+        const verdict = parsed.verdict ?? null;
+        const bhScore =
+          verdict === "CORROBORATED" ? 8.0 :
+          verdict === "WEAK" ? 4.0 :
+          verdict === "CONTRADICTED" ? 1.0 : null;
+        const evidenceSufficient = verdict === "CORROBORATED";
+        await neonQuery(
+          `UPDATE cases SET
+             verification         = $2::jsonb,
+             mission_types        = $3::jsonb,
+             bradford_hill_score  = COALESCE($4::numeric, bradford_hill_score),
+             evidence_sufficient  = COALESCE($5::boolean, evidence_sufficient),
+             verified_at          = now(),
+             updated_at           = now()
+           WHERE case_id=$1 OR id::text=$1`,
+          [
+            data.caseId,
+            JSON.stringify(parsed),
+            JSON.stringify(parsed.mission_type_estimates ?? missionTypes),
+            bhScore,
+            evidenceSufficient,
+          ],
+        ).catch(() => {});
+      }
+
       return {
         ok: true as const,
         raw: text,
@@ -1318,6 +1346,15 @@ export const getDuplicateGroups = createServerFn({ method: "GET" }).handler(asyn
     .sort((a, b) => b.cases.length - a.cases.length);
 });
 
+/**
+ * Real case consolidation:
+ *  - UNION detection_ids / anomaly_ids / violation_ids / convergence_ids / pattern_ids into primary
+ *  - Aggregate all tails + ICAOs into related_tails / related_icaos
+ *  - Sum total_events; carry max(wti_score) into primary
+ *  - Repoint case_doctrine_links, osint_findings, osint_adsb_pulls to primary case_id
+ *  - Record provenance in related_case_ids
+ *  - Mark absorbed cases as DISMISSED with dismissed_reason='MERGED'
+ */
 export const mergeDuplicateCases = createServerFn({ method: "POST" })
   .inputValidator((d: { primary_case_id: string; duplicate_case_ids: string[] }) => {
     if (!d.primary_case_id) throw new Error("primary_case_id required");
@@ -1325,23 +1362,188 @@ export const mergeDuplicateCases = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
-    const note = `[${new Date().toISOString().slice(0, 10)}] Merged as duplicate of ${data.primary_case_id}.`;
+    const today = new Date().toISOString().slice(0, 10);
+    const dupIds = data.duplicate_case_ids.filter((id) => id && id !== data.primary_case_id);
+    if (!dupIds.length) return { ok: true, merged: 0 };
+
+    // Load primary + duplicates (all fields we care about)
+    const rows = await q<{
+      case_id: string;
+      subject_reg: string | null;
+      subject_icao: string | null;
+      subject_owner: string | null;
+      detection_ids: string[] | null;
+      anomaly_ids: string[] | null;
+      violation_ids: string[] | null;
+      convergence_ids: string[] | null;
+      pattern_ids: string[] | null;
+      related_tails: string[] | null;
+      related_icaos: string[] | null;
+      related_case_ids: string[] | null;
+      total_events: number | null;
+      wti_score: string | null;
+      auto_summary: string | null;
+      reviewer_notes: string | null;
+    }>(
+      `SELECT case_id, subject_reg, subject_icao, subject_owner,
+              detection_ids, anomaly_ids, violation_ids, convergence_ids, pattern_ids,
+              related_tails, related_icaos, related_case_ids,
+              total_events, wti_score::text, auto_summary, reviewer_notes
+         FROM cases
+        WHERE case_id = ANY($1::text[]) OR id::text = ANY($1::text[])`,
+      [[data.primary_case_id, ...dupIds]],
+    );
+
+    const primary = rows.find((r) => r.case_id === data.primary_case_id);
+    if (!primary) throw new Error("primary case not found");
+    const dups = rows.filter((r) => r.case_id !== data.primary_case_id);
+    if (!dups.length) return { ok: true, merged: 0 };
+
+    const uniq = (arr: (string | null | undefined)[]) =>
+      Array.from(new Set(arr.filter((x): x is string => !!x && x.trim().length > 0).map((s) => s.trim())));
+
+    const mergedDetection = uniq([...(primary.detection_ids ?? []), ...dups.flatMap((d) => d.detection_ids ?? [])]);
+    const mergedAnomaly = uniq([...(primary.anomaly_ids ?? []), ...dups.flatMap((d) => d.anomaly_ids ?? [])]);
+    const mergedViolation = uniq([...(primary.violation_ids ?? []), ...dups.flatMap((d) => d.violation_ids ?? [])]);
+    const mergedConvergence = uniq([...(primary.convergence_ids ?? []), ...dups.flatMap((d) => d.convergence_ids ?? [])]);
+    const mergedPattern = uniq([...(primary.pattern_ids ?? []), ...dups.flatMap((d) => d.pattern_ids ?? [])]);
+
+    const mergedTails = uniq([
+      primary.subject_reg,
+      ...(primary.related_tails ?? []),
+      ...dups.flatMap((d) => [d.subject_reg, ...(d.related_tails ?? [])]),
+    ]).map((s) => s.toUpperCase()).filter((s) => s !== (primary.subject_reg ?? "").toUpperCase());
+
+    const mergedIcaos = uniq([
+      primary.subject_icao,
+      ...(primary.related_icaos ?? []),
+      ...dups.flatMap((d) => [d.subject_icao, ...(d.related_icaos ?? [])]),
+    ]).map((s) => s.toLowerCase()).filter((s) => s !== (primary.subject_icao ?? "").toLowerCase());
+
+    const mergedCaseIds = uniq([...(primary.related_case_ids ?? []), ...dups.map((d) => d.case_id)]);
+
+    const totalEvents =
+      (primary.total_events ?? 0) + dups.reduce((s, d) => s + (d.total_events ?? 0), 0);
+
+    const maxWti = Math.max(
+      Number(primary.wti_score ?? 0),
+      ...dups.map((d) => Number(d.wti_score ?? 0)),
+    );
+
+    const absorbedNote =
+      `[${today}] Consolidated ${dups.length} same-operator case${dups.length === 1 ? "" : "s"}: ` +
+      dups.map((d) => d.case_id).join(", ") +
+      (mergedTails.length ? ` · added tails: ${mergedTails.join(", ")}` : "");
+
+    // 1) Update primary with union'd evidence + related tails
+    await q(
+      `UPDATE cases SET
+         detection_ids   = $2::uuid[],
+         anomaly_ids     = $3::uuid[],
+         violation_ids   = $4::uuid[],
+         convergence_ids = $5::uuid[],
+         pattern_ids     = $6::uuid[],
+         related_tails   = $7::text[],
+         related_icaos   = $8::text[],
+         related_case_ids= $9::text[],
+         total_events    = $10,
+         wti_score       = GREATEST(COALESCE(wti_score, 0), $11::numeric),
+         reviewer_notes  = COALESCE(reviewer_notes || E'\n', '') || $12,
+         updated_at      = now()
+       WHERE case_id = $1 OR id::text = $1`,
+      [
+        data.primary_case_id,
+        mergedDetection,
+        mergedAnomaly,
+        mergedViolation,
+        mergedConvergence,
+        mergedPattern,
+        mergedTails,
+        mergedIcaos,
+        mergedCaseIds,
+        totalEvents,
+        maxWti,
+        absorbedNote,
+      ],
+    );
+
+    // 2) Repoint child rows (best-effort, table may not exist in every install)
+    const repoint = async (sql: string) => {
+      try {
+        await q(sql, [data.primary_case_id, dupIds]);
+      } catch {
+        /* table missing / no rows — non-fatal */
+      }
+    };
+    await repoint(`UPDATE case_doctrine_links SET case_id = $1 WHERE case_id = ANY($2::text[])`);
+    await repoint(`UPDATE osint_findings      SET case_id = $1 WHERE case_id = ANY($2::text[])`);
+    await repoint(`UPDATE osint_adsb_pulls    SET case_id = $1 WHERE case_id = ANY($2::text[])`);
+
+    // 3) Mark absorbed cases DISMISSED with pointer
+    const dupNote = `[${today}] Consolidated into ${data.primary_case_id} (same-operator merge).`;
     await q(
       `UPDATE cases
-       SET status = 'DISMISSED',
-           reviewer_notes = COALESCE(reviewer_notes || E'\n', '') || $2
+         SET status           = 'DISMISSED',
+             dismissed_reason = 'MERGED',
+             reviewer_notes   = COALESCE(reviewer_notes || E'\n', '') || $2,
+             updated_at       = now()
        WHERE (case_id = ANY($1::text[]) OR id::text = ANY($1::text[]))
          AND case_id <> $3`,
-      [data.duplicate_case_ids, note, data.primary_case_id],
+      [dupIds, dupNote, data.primary_case_id],
     );
-    // Append merge note to primary
-    await q(
-      `UPDATE cases
-       SET reviewer_notes = COALESCE(reviewer_notes || E'\n', '') || $2
-       WHERE case_id = $1 OR id::text = $1`,
-      [data.primary_case_id, `[${new Date().toISOString().slice(0, 10)}] Absorbed duplicates: ${data.duplicate_case_ids.join(", ")}.`],
+
+    return {
+      ok: true,
+      merged: dups.length,
+      primary_case_id: data.primary_case_id,
+      added_tails: mergedTails,
+      added_icaos: mergedIcaos,
+      total_detection_ids: mergedDetection.length,
+      total_convergence_ids: mergedConvergence.length,
+    };
+  });
+
+/**
+ * One-click consolidation of an entire same-operator cluster:
+ * automatically picks the highest-WTI, most-evidenced case as primary
+ * and absorbs the rest.
+ */
+export const consolidateCluster = createServerFn({ method: "POST" })
+  .inputValidator((d: { case_ids: string[] }) => {
+    if (!d.case_ids || d.case_ids.length < 2) throw new Error("need at least 2 case_ids");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const rows = await q<{
+      case_id: string;
+      wti_score: string | null;
+      total_events: number | null;
+      status: string;
+    }>(
+      `SELECT case_id, wti_score::text, total_events, status
+         FROM cases
+        WHERE case_id = ANY($1::text[])
+          AND status <> 'DISMISSED'`,
+      [data.case_ids],
     );
-    return { ok: true, merged: data.duplicate_case_ids.length };
+    if (rows.length < 2) return { ok: false as const, error: "fewer than 2 active cases in cluster" };
+
+    // Prefer highest WTI, tiebreak by total_events
+    rows.sort((a, b) => {
+      const w = Number(b.wti_score ?? 0) - Number(a.wti_score ?? 0);
+      if (w !== 0) return w;
+      return (b.total_events ?? 0) - (a.total_events ?? 0);
+    });
+    const primary = rows[0].case_id;
+    const dupes = rows.slice(1).map((r) => r.case_id);
+
+    const merged = await (mergeDuplicateCases as unknown as (args: {
+      data: { primary_case_id: string; duplicate_case_ids: string[] };
+    }) => Promise<{ ok: boolean; merged: number }>)({
+      data: { primary_case_id: primary, duplicate_case_ids: dupes },
+    });
+
+    return { ok: true as const, primary_case_id: primary, merged: merged.merged };
   });
 
 

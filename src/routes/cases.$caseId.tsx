@@ -69,6 +69,21 @@ function CaseDetail() {
         {c.subject_owner && (
           <div className="text-sm text-muted-foreground mt-1">{c.subject_owner}</div>
         )}
+        {(c.related_tails?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1 items-center">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Fleet / Related tails:</span>
+            {c.related_tails!.map((t) => (
+              <span key={t} className="text-[10px] font-mono px-2 py-0.5 border border-accent/40 text-accent">
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+        {(c.related_case_ids?.length ?? 0) > 0 && (
+          <div className="mt-1 text-[10px] text-muted-foreground">
+            Consolidated from {c.related_case_ids!.length} prior case{c.related_case_ids!.length === 1 ? "" : "s"}: {c.related_case_ids!.join(", ")}
+          </div>
+        )}
         <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
           <Field k="Status" v={c.status} tone="green" />
           <Field k="WTI Tier" v={c.wti_tier ?? "—"} tone="orange" />

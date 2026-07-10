@@ -1515,7 +1515,7 @@ export const consolidateCluster = createServerFn({ method: "POST" })
       data: { primary_case_id: primary, duplicate_case_ids: dupes },
     });
 
-    return { ok: true as const, primary_case_id: primary, ...merged };
+    return { ok: true as const, primary_case_id: primary, merged: merged.merged };
   });
 
 

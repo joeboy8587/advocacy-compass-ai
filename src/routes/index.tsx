@@ -273,12 +273,12 @@ function PipelineHealth({
   ];
   const anyStale = rows.some((r) => r.age > r.warnAfter);
   return (
-    <section className={`panel p-3 ${anyStale ? "border-primary/60" : ""}`}>
+    <section className={`panel p-3 ${anyStale ? "border-primary/60" : ""}`} suppressHydrationWarning>
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
           <Activity className="size-4" /> Pipeline Freshness
         </div>
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground" suppressHydrationWarning>
           {anyStale ? (
             <span className="text-primary">⚠ stale pipeline · windows anchored to MAX(timestamp)</span>
           ) : (

@@ -207,6 +207,13 @@ function DuplicatesPanel() {
       qc.invalidateQueries({ queryKey: ["cases"] });
     },
   });
+  const consolidate = useMutation({
+    mutationFn: (v: { case_ids: string[] }) => consolidateCluster({ data: v }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["duplicate-groups"] });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+    },
+  });
 
   if (!dups.data?.length) return null;
 

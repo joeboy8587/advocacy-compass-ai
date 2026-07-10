@@ -232,11 +232,12 @@ function DuplicatesPanel() {
       {!collapsed && (
         <div className="space-y-3">
           <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
-            Pick the primary case to keep; the rest will be dismissed as duplicates with a merge note pointing to the primary.
+            Same-operator cases should live as ONE consolidated file. Use <span className="text-accent">CONSOLIDATE ALL</span> to auto-pick the strongest case as primary and absorb the rest (all detections, anomalies, convergences, doctrine links and OSINT findings roll up; every tail becomes a related aircraft).
           </p>
           {dups.data.map((g) => {
             const primary = selection[g.group_key] ?? g.cases[0].case_id;
             const dupIds = g.cases.map((c) => c.case_id).filter((id) => id !== primary);
+            const allIds = g.cases.map((c) => c.case_id);
             return (
               <div key={g.group_key} className="border border-border/60 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -246,8 +247,20 @@ function DuplicatesPanel() {
                     </div>
                     <div className="font-bold neon-text-orange truncate">{g.label}</div>
                   </div>
-                  <div className="text-[10px] text-muted-foreground shrink-0">
-                    {g.cases.length} cases
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] text-muted-foreground">{g.cases.length} cases</span>
+                    <button
+                      disabled={consolidate.isPending}
+                      onClick={() => {
+                        if (confirm(`Consolidate all ${g.cases.length} cases for ${g.label} into ONE case file? Absorbed cases will be marked DISMISSED (MERGED).`)) {
+                          consolidate.mutate({ case_ids: allIds });
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest border border-primary text-primary px-2 py-1 hover:bg-primary/10 disabled:opacity-50"
+                    >
+                      {consolidate.isPending ? <Loader2 className="size-3 animate-spin" /> : <Merge className="size-3" />}
+                      Consolidate all
+                    </button>
                   </div>
                 </div>
 

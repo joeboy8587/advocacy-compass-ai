@@ -392,6 +392,12 @@ export type CaseDetail = CaseRow & {
   bh_temporality: boolean | null;
   bh_corroboration: boolean | null;
   evidence_sufficient: boolean | null;
+  related_tails: string[] | null;
+  related_icaos: string[] | null;
+  related_case_ids: string[] | null;
+  mission_types: unknown | null;
+  verification: unknown | null;
+  verified_at: string | null;
 };
 
 export const getCaseById = createServerFn({ method: "GET" })

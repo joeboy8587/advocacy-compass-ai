@@ -22,6 +22,7 @@ import {
 } from "@/lib/watchtower.functions";
 import { Stat, fmt } from "@/components/cmd/Stat";
 import { Link } from "@tanstack/react-router";
+import { LoadErrorPanel } from "@/components/LoadErrorPanel";
 
 const kpisOpts = queryOptions({
   queryKey: ["kpis"],

@@ -1,51 +1,11 @@
 import { QueryClient } from "@tanstack/react-query";
-import { createRouter, useRouter } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+import { LoadErrorPanel } from "./components/LoadErrorPanel";
 
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
-  const router = useRouter();
-
-  // Auto-retry once after a short delay — most failures here are cold-start
-  // server-fn 5xx or stale-bundle blips that resolve on a fresh call.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      router.invalidate();
-      reset();
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [router, reset]);
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Reconnecting…
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The command UI hit a transient loading issue and is retrying automatically.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button
-            onClick={() => {
-              router.invalidate();
-              reset();
-            }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Try again now
-          </button>
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            Go home
-          </a>
-        </div>
-      </div>
-    </div>
-  );
+  return <LoadErrorPanel error={error} reset={reset} />;
 }
 
 export const getRouter = () => {

@@ -375,6 +375,18 @@ export const getCases = createServerFn({ method: "GET" })
     );
   });
 
+export type CaseMissionType = { type: string; confidence: number; rationale: string };
+export type CaseVerification = {
+  verdict?: string;
+  confidence?: number;
+  strengths?: string[];
+  weaknesses?: string[];
+  missing_evidence?: string[];
+  mission_type_estimates?: CaseMissionType[];
+  recommended_status?: string;
+  one_line_summary?: string;
+};
+
 export type CaseDetail = CaseRow & {
   reviewer_notes: string | null;
   dismissed_reason: string | null;
@@ -395,8 +407,8 @@ export type CaseDetail = CaseRow & {
   related_tails: string[] | null;
   related_icaos: string[] | null;
   related_case_ids: string[] | null;
-  mission_types: Record<string, unknown> | Array<Record<string, unknown>> | null;
-  verification: Record<string, unknown> | null;
+  mission_types: CaseMissionType[] | null;
+  verification: CaseVerification | null;
   verified_at: string | null;
 };
 

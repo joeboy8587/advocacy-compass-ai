@@ -395,8 +395,8 @@ export type CaseDetail = CaseRow & {
   related_tails: string[] | null;
   related_icaos: string[] | null;
   related_case_ids: string[] | null;
-  mission_types: unknown | null;
-  verification: unknown | null;
+  mission_types: Record<string, unknown> | Array<Record<string, unknown>> | null;
+  verification: Record<string, unknown> | null;
   verified_at: string | null;
 };
 

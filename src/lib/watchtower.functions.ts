@@ -40,62 +40,52 @@ export type Kpis = {
   per table tells the truth without claiming live data when the pipeline is paused.
 */
 export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
-  try {
-    const rows = await q<Kpis>(`
-    WITH
-      ml_max AS (SELECT MAX(detected_at) AS t FROM ml_anomaly_detections),
-      vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
-      inc_max AS (SELECT MAX(event_timestamp) AS t FROM incursion_events),
-      det_max AS (SELECT MAX(captured_at) AS t FROM detections)
-    SELECT
-      (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS detections_24h,
-      (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,
-      (SELECT count(*)::int FROM aoi_alerts WHERE captured_at > now() - interval '24 hours' AND alert_level = 'CRITICAL') AS critical_alerts_24h,
-      (SELECT count(*)::int FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN','CONFIRMED')) AS active_cases,
-      (SELECT count(*)::int FROM violation_classifications WHERE captured_at > (SELECT t FROM vc_max) - interval '7 days') AS violations_7d,
-      (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
-      (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS unique_aircraft_24h,
-      (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h,
-      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'SPOOFING_SIGNAL') AS spoofing_24h,
-      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'MASKED_ALTITUDE') AS masked_alt_24h,
-      (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'IMPOSSIBLE_PHYSICS') AS impossible_physics_24h,
-      (SELECT count(*)::int FROM wtpr_convergent_locks WHERE machine_confirmed = true) AS coordination_locks,
-      (SELECT count(*)::int FROM incursion_events WHERE event_timestamp > (SELECT t FROM inc_max) - interval '7 days') AS incursions_7d,
-      EXTRACT(EPOCH FROM (now() - (SELECT t FROM ml_max))) / 3600 AS ml_anomaly_age_hours,
-      EXTRACT(EPOCH FROM (now() - (SELECT t FROM vc_max))) / 3600 AS violations_age_hours,
-      EXTRACT(EPOCH FROM (now() - (SELECT t FROM inc_max))) / 3600 AS incursions_age_hours,
-      EXTRACT(EPOCH FROM (now() - (SELECT t FROM det_max))) / 3600 AS detections_age_hours,
-      24 AS spoofing_window_hours,
-      7 AS violations_window_days,
-      7 AS incursions_window_days
-  `);
-    return rows[0];
-  } catch (error) {
-    console.error(error);
-    return {
-      detections_24h: 0,
-      anomalies_24h: 0,
-      critical_alerts_24h: 0,
-      active_cases: 0,
-      violations_7d: 0,
-      convergences_24h: 0,
-      unique_aircraft_24h: 0,
-      low_alt_24h: 0,
-      spoofing_24h: 0,
-      masked_alt_24h: 0,
-      impossible_physics_24h: 0,
-      coordination_locks: 0,
-      incursions_7d: 0,
-      ml_anomaly_age_hours: null,
-      violations_age_hours: null,
-      incursions_age_hours: null,
-      detections_age_hours: null,
-      spoofing_window_hours: 24,
-      violations_window_days: 7,
-      incursions_window_days: 7,
-    } satisfies Kpis;
+  // No silent-zero fallback: this is an operational dashboard. If Neon is
+  // unreachable, throw so the UI shows a real error with retry, not fake
+  // zeros that look like "no violations". One retry handles cold-wake.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const rows = await q<Kpis>(`
+        WITH
+          ml_max AS (SELECT MAX(detected_at) AS t FROM ml_anomaly_detections),
+          vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
+          inc_max AS (SELECT MAX(event_timestamp) AS t FROM incursion_events),
+          det_max AS (SELECT MAX(captured_at) AS t FROM detections)
+        SELECT
+          (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS detections_24h,
+          (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,
+          (SELECT count(*)::int FROM aoi_alerts WHERE captured_at > now() - interval '24 hours' AND alert_level = 'CRITICAL') AS critical_alerts_24h,
+          (SELECT count(*)::int FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN','CONFIRMED')) AS active_cases,
+          (SELECT count(*)::int FROM violation_classifications WHERE captured_at > (SELECT t FROM vc_max) - interval '7 days') AS violations_7d,
+          (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
+          (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS unique_aircraft_24h,
+          (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h,
+          (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'SPOOFING_SIGNAL') AS spoofing_24h,
+          (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'MASKED_ALTITUDE') AS masked_alt_24h,
+          (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at > (SELECT t FROM ml_max) - interval '24 hours' AND anomaly_type = 'IMPOSSIBLE_PHYSICS') AS impossible_physics_24h,
+          (SELECT count(*)::int FROM wtpr_convergent_locks WHERE machine_confirmed = true) AS coordination_locks,
+          (SELECT count(*)::int FROM incursion_events WHERE event_timestamp > (SELECT t FROM inc_max) - interval '7 days') AS incursions_7d,
+          EXTRACT(EPOCH FROM (now() - (SELECT t FROM ml_max))) / 3600 AS ml_anomaly_age_hours,
+          EXTRACT(EPOCH FROM (now() - (SELECT t FROM vc_max))) / 3600 AS violations_age_hours,
+          EXTRACT(EPOCH FROM (now() - (SELECT t FROM inc_max))) / 3600 AS incursions_age_hours,
+          EXTRACT(EPOCH FROM (now() - (SELECT t FROM det_max))) / 3600 AS detections_age_hours,
+          24 AS spoofing_window_hours,
+          7 AS violations_window_days,
+          7 AS incursions_window_days
+      `);
+      return rows[0];
+    } catch (error) {
+      lastErr = error;
+      const msg = error instanceof Error ? error.message : String(error);
+      // Only retry on transient connection/cold-wake failures.
+      if (!/timeout|ETIMEDOUT|ECONNRESET|Connection terminated/i.test(msg)) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
   }
+  throw lastErr instanceof Error ? lastErr : new Error("KPI query failed");
 });
+
 
 
 // ---------- Spoofing analysis ----------

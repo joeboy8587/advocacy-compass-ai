@@ -21,13 +21,15 @@ export function getNeonPool(): Pool {
       connectionString,
       ssl: { rejectUnauthorized: false },
       max: 3,
-      idleTimeoutMillis: 15_000,
-      connectionTimeoutMillis: 5_000,
-      // pg respects these — server-side statement_timeout is the real
-      // safety net; query_timeout is the client-side abort.
+      idleTimeoutMillis: 30_000,
+      // Neon serverless compute can take 5-10s to wake from suspend.
+      // Give the initial handshake enough runway so we don't return
+      // fake zeros to the operational dashboard.
+      connectionTimeoutMillis: 15_000,
       statement_timeout: STATEMENT_TIMEOUT_MS,
       query_timeout: STATEMENT_TIMEOUT_MS,
     } as ConstructorParameters<typeof Pool>[0]);
+
     globalThis.__neonPool.on("error", (err) => {
       // A background socket error should not crash the worker.
       console.error("[neon pool] idle client error:", err.message);

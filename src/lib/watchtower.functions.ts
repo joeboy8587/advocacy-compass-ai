@@ -400,7 +400,60 @@ export type CaseDetail = CaseRow & {
   mission_types: CaseMissionType[] | null;
   verification: CaseVerification | null;
   verified_at: string | null;
+  human_reviewed: boolean | null;
+  human_reviewed_at: string | null;
+  human_reviewed_by: string | null;
+  review_checklist: Record<string, boolean> | null;
+  completed_at: string | null;
 };
+
+// Checklist an operator ticks off before a case file counts as complete.
+export const REVIEW_CHECKLIST_ITEMS = [
+  { key: "evidence_attached", label: "Evidence attached (detections / anomalies / locks)" },
+  { key: "timestamps_verified", label: "Timestamps normalized to UTC and verified" },
+  { key: "registry_verified", label: "FAA registry + operator identity verified" },
+  { key: "regs_cited", label: "CFR regulations cited for each violation" },
+  { key: "screenshots_hashed", label: "Radar screenshots hashed and matched" },
+  { key: "narrative_read", label: "Josiah narrative read and agreed with" },
+  { key: "legal_ready", label: "Ready for legal export / filing" },
+] as const;
+
+export const setCaseHumanReview = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: {
+      id: string;
+      reviewed: boolean;
+      reviewer?: string | null;
+      checklist?: Record<string, boolean> | null;
+      complete?: boolean;
+    }) => {
+      if (!d?.id) throw new Error("id required");
+      return d;
+    },
+  )
+  .handler(async ({ data }) => {
+    const rows = await q<{ id: string; human_reviewed: boolean; completed_at: string | null }>(
+      `UPDATE cases SET
+         human_reviewed = $2,
+         human_reviewed_at = CASE WHEN $2 THEN now() ELSE NULL END,
+         human_reviewed_by = CASE WHEN $2 THEN COALESCE($3, human_reviewed_by, 'admin') ELSE NULL END,
+         review_checklist = COALESCE($4::jsonb, review_checklist),
+         completed_at = CASE WHEN $2 AND $5 THEN now() WHEN NOT $2 THEN NULL ELSE completed_at END,
+         reviewed_at = CASE WHEN $2 THEN now() ELSE reviewed_at END,
+         updated_at = now()
+       WHERE case_id = $1 OR id::text = $1
+       RETURNING id::text, human_reviewed, completed_at::text`,
+      [
+        data.id,
+        data.reviewed,
+        data.reviewer ?? null,
+        data.checklist ? JSON.stringify(data.checklist) : null,
+        data.complete ?? false,
+      ],
+    );
+    return { ok: true as const, row: rows[0] ?? null };
+  });
+
 
 export const getCaseById = createServerFn({ method: "GET" })
   .inputValidator((d: { id: string }) => d)

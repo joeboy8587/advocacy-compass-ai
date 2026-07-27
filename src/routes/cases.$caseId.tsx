@@ -960,7 +960,9 @@ function TriageTab({
     });
 
   return (
-    <section className="panel p-5 space-y-4">
+    <>
+    <HumanReviewPanel c={c} caseId={caseId} reviewer={reviewer} onSaved={onSaved} />
+    <section className="panel p-5 space-y-4 mt-4">
       <div className="flex items-center justify-between">
         <div className="text-xs uppercase tracking-widest neon-text-orange">Triage Workflow</div>
         <div className="text-[10px] text-muted-foreground">

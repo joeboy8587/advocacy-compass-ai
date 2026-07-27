@@ -7,7 +7,7 @@ import {
   FileDown, Loader2, User, Clock, Users, Camera, Search, Sparkles, AlertTriangle,
   Paperclip, Upload, Trash2, X, Globe, Archive, ExternalLink, Radar,
 } from "lucide-react";
-import { getCaseById, updateCase, getCaseEvidence } from "@/lib/watchtower.functions";
+import { getCaseById, updateCase, getCaseEvidence, setCaseHumanReview, REVIEW_CHECKLIST_ITEMS } from "@/lib/watchtower.functions";
 import {
   getSubjectDossier, getSubjectTimeline, getCoFliers, getSubjectScreenshots,
   registryCrossCheck, corroborateCase, attachDetectionsToCase, autoBuildCase,

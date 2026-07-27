@@ -1030,8 +1030,114 @@ function TriageTab({
         {c.is_published && <Row k="Published" v="✔ Public on advocacywatch.live" />}
       </div>
     </section>
+    </>
   );
 }
+
+// ============================================================
+// HUMAN REVIEW — mark a case file verified & complete
+// ============================================================
+function HumanReviewPanel({
+  c, caseId, reviewer, onSaved,
+}: {
+  c: ReturnType<typeof getCaseSafe>;
+  caseId: string;
+  reviewer: string;
+  onSaved: () => void;
+}) {
+  const [checks, setChecks] = useState<Record<string, boolean>>(
+    () => (c.review_checklist as Record<string, boolean> | null) ?? {},
+  );
+  useEffect(() => {
+    setChecks((c.review_checklist as Record<string, boolean> | null) ?? {});
+  }, [c.id]);
+
+  const done = REVIEW_CHECKLIST_ITEMS.filter((i) => checks[i.key]).length;
+  const total = REVIEW_CHECKLIST_ITEMS.length;
+  const allDone = done === total;
+
+  const review = useMutation({
+    mutationFn: (vars: { reviewed: boolean; complete?: boolean }) =>
+      setCaseHumanReview({
+        data: { id: caseId, reviewed: vars.reviewed, complete: vars.complete, reviewer, checklist: checks },
+      }),
+    onSuccess: () => onSaved(),
+  });
+
+  return (
+    <section className="panel p-5 space-y-4 border-primary/40">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-widest neon-text-green flex items-center gap-2">
+          <ShieldCheck className="size-4" /> Human Review · Case File Completion
+        </div>
+        <div className="text-[10px] text-muted-foreground tabular-nums">
+          {done}/{total} checks
+        </div>
+      </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        Josiah does the machine work. Nothing counts as a finished case file until you sign off here — this
+        writes your review to the database so nothing gets filed on AI output alone.
+      </p>
+
+      <div className="grid md:grid-cols-2 gap-2">
+        {REVIEW_CHECKLIST_ITEMS.map((item) => (
+          <label
+            key={item.key}
+            className="flex items-start gap-2 text-xs panel p-2 cursor-pointer hover:border-accent"
+          >
+            <input
+              type="checkbox"
+              checked={!!checks[item.key]}
+              onChange={(e) => setChecks((p) => ({ ...p, [item.key]: e.target.checked }))}
+              className="mt-0.5 accent-[color:var(--neon-green,currentColor)]"
+            />
+            <span className={checks[item.key] ? "text-primary" : "text-muted-foreground"}>{item.label}</span>
+          </label>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
+        <button
+          disabled={review.isPending}
+          onClick={() => review.mutate({ reviewed: true })}
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest border border-primary text-primary hover:bg-primary/10 rounded-sm disabled:opacity-50"
+        >
+          {review.isPending ? <Loader2 className="size-3 animate-spin" /> : <CheckCircle2 className="size-3" />}
+          Mark Human Reviewed
+        </button>
+        <button
+          disabled={review.isPending || !allDone}
+          title={allDone ? "" : "Tick every checklist item first"}
+          onClick={() => review.mutate({ reviewed: true, complete: true })}
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase tracking-widest bg-accent text-accent-foreground hover:bg-accent/80 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <ShieldCheck className="size-3" /> Complete Case File
+        </button>
+        {c.human_reviewed && (
+          <button
+            disabled={review.isPending}
+            onClick={() => review.mutate({ reviewed: false })}
+            className="inline-flex items-center gap-2 px-3 py-2 text-[11px] uppercase tracking-widest border border-destructive/50 text-destructive hover:bg-destructive/10 rounded-sm"
+          >
+            <XCircle className="size-3" /> Reopen for review
+          </button>
+        )}
+        {review.isError && (
+          <span className="text-xs text-destructive">{(review.error as Error)?.message ?? "Failed"}</span>
+        )}
+      </div>
+
+      <div className="text-[10px] text-muted-foreground space-y-1">
+        <Row k="Human reviewed" v={c.human_reviewed ? "YES" : "NO"} />
+        {c.human_reviewed_by && <Row k="Signed off by" v={c.human_reviewed_by} />}
+        {c.human_reviewed_at && <Row k="Reviewed at" v={new Date(c.human_reviewed_at).toLocaleString()} />}
+        {c.completed_at && <Row k="File completed" v={new Date(c.completed_at).toLocaleString()} />}
+      </div>
+    </section>
+  );
+}
+
 
 // ============================================================
 // helpers

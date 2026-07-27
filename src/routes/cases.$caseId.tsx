@@ -84,6 +84,20 @@ function CaseDetail() {
             Consolidated from {c.related_case_ids!.length} prior case{c.related_case_ids!.length === 1 ? "" : "s"}: {c.related_case_ids!.join(", ")}
           </div>
         )}
+        <div className="mt-3">
+          {c.human_reviewed ? (
+            <span className="inline-flex items-center gap-2 px-3 py-1 text-[10px] uppercase tracking-widest border border-primary text-primary bg-primary/10 rounded-sm">
+              <ShieldCheck className="size-3" />
+              Human reviewed{c.human_reviewed_by ? ` by ${c.human_reviewed_by}` : ""}
+              {c.human_reviewed_at ? ` · ${new Date(c.human_reviewed_at).toLocaleString()}` : ""}
+              {c.completed_at ? " · FILE COMPLETE" : ""}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2 px-3 py-1 text-[10px] uppercase tracking-widest border border-destructive/50 text-destructive bg-destructive/10 rounded-sm">
+              <AlertTriangle className="size-3" /> Awaiting human review
+            </span>
+          )}
+        </div>
         <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
           <Field k="Status" v={c.status} tone="green" />
           <Field k="WTI Tier" v={c.wti_tier ?? "—"} tone="orange" />

@@ -342,6 +342,8 @@ export type CaseRow = {
   total_events: number | null;
   anomaly_type: string | null;
   is_published: boolean | null;
+  human_reviewed: boolean | null;
+  completed_at: string | null;
 };
 
 export const getCases = createServerFn({ method: "GET" })
@@ -357,7 +359,8 @@ export const getCases = createServerFn({ method: "GET" })
     return q<CaseRow>(
       `SELECT id, case_id, case_type, severity, subject_icao, subject_reg, subject_owner,
               primary_county, wti_score, wti_tier, status, opened_at, bradford_hill_score,
-              auto_summary, total_events, anomaly_type, is_published
+              auto_summary, total_events, anomaly_type, is_published,
+              human_reviewed, completed_at::text AS completed_at
        FROM cases ${where}
        ORDER BY wti_tier DESC NULLS LAST, opened_at DESC
        LIMIT $1`,

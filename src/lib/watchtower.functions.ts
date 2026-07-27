@@ -342,6 +342,8 @@ export type CaseRow = {
   total_events: number | null;
   anomaly_type: string | null;
   is_published: boolean | null;
+  human_reviewed: boolean | null;
+  completed_at: string | null;
 };
 
 export const getCases = createServerFn({ method: "GET" })
@@ -357,7 +359,8 @@ export const getCases = createServerFn({ method: "GET" })
     return q<CaseRow>(
       `SELECT id, case_id, case_type, severity, subject_icao, subject_reg, subject_owner,
               primary_county, wti_score, wti_tier, status, opened_at, bradford_hill_score,
-              auto_summary, total_events, anomaly_type, is_published
+              auto_summary, total_events, anomaly_type, is_published,
+              human_reviewed, completed_at::text AS completed_at
        FROM cases ${where}
        ORDER BY wti_tier DESC NULLS LAST, opened_at DESC
        LIMIT $1`,
@@ -400,7 +403,60 @@ export type CaseDetail = CaseRow & {
   mission_types: CaseMissionType[] | null;
   verification: CaseVerification | null;
   verified_at: string | null;
+  human_reviewed: boolean | null;
+  human_reviewed_at: string | null;
+  human_reviewed_by: string | null;
+  review_checklist: Record<string, boolean> | null;
+  completed_at: string | null;
 };
+
+// Checklist an operator ticks off before a case file counts as complete.
+export const REVIEW_CHECKLIST_ITEMS = [
+  { key: "evidence_attached", label: "Evidence attached (detections / anomalies / locks)" },
+  { key: "timestamps_verified", label: "Timestamps normalized to UTC and verified" },
+  { key: "registry_verified", label: "FAA registry + operator identity verified" },
+  { key: "regs_cited", label: "CFR regulations cited for each violation" },
+  { key: "screenshots_hashed", label: "Radar screenshots hashed and matched" },
+  { key: "narrative_read", label: "Josiah narrative read and agreed with" },
+  { key: "legal_ready", label: "Ready for legal export / filing" },
+] as const;
+
+export const setCaseHumanReview = createServerFn({ method: "POST" })
+  .inputValidator(
+    (d: {
+      id: string;
+      reviewed: boolean;
+      reviewer?: string | null;
+      checklist?: Record<string, boolean> | null;
+      complete?: boolean;
+    }) => {
+      if (!d?.id) throw new Error("id required");
+      return d;
+    },
+  )
+  .handler(async ({ data }) => {
+    const rows = await q<{ id: string; human_reviewed: boolean; completed_at: string | null }>(
+      `UPDATE cases SET
+         human_reviewed = $2,
+         human_reviewed_at = CASE WHEN $2 THEN now() ELSE NULL END,
+         human_reviewed_by = CASE WHEN $2 THEN COALESCE($3, human_reviewed_by, 'admin') ELSE NULL END,
+         review_checklist = COALESCE($4::jsonb, review_checklist),
+         completed_at = CASE WHEN $2 AND $5 THEN now() WHEN NOT $2 THEN NULL ELSE completed_at END,
+         reviewed_at = CASE WHEN $2 THEN now() ELSE reviewed_at END,
+         updated_at = now()
+       WHERE case_id = $1 OR id::text = $1
+       RETURNING id::text, human_reviewed, completed_at::text`,
+      [
+        data.id,
+        data.reviewed,
+        data.reviewer ?? null,
+        data.checklist ? JSON.stringify(data.checklist) : null,
+        data.complete ?? false,
+      ],
+    );
+    return { ok: true as const, row: rows[0] ?? null };
+  });
+
 
 export const getCaseById = createServerFn({ method: "GET" })
   .inputValidator((d: { id: string }) => d)

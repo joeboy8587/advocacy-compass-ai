@@ -104,6 +104,11 @@ function CasesIndex() {
                   c.status === "DISMISSED" ? "border-destructive text-destructive" :
                   "border-muted-foreground text-muted-foreground"
                 }`}>{c.status}</div>
+                {c.human_reviewed && (
+                  <div className="mt-1 text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-sm border border-primary text-primary inline-block">
+                    {c.completed_at ? "✔ File complete" : "✔ Reviewed"}
+                  </div>
+                )}
                 <div className="mt-2 text-3xl font-bold neon-text-orange tabular-nums">
                   {c.wti_tier ?? "—"}
                 </div>

@@ -383,7 +383,7 @@ export const matchScreenshot = createServerFn({ method: "POST" })
 
     // --- Pass 1: exact-time window around EXIF/synthesized UTC ---
     let matches: DetectionMatch[] = [];
-    let method: "exact" | "time_of_day" | null = null;
+    let method: "exact" | "time_of_day" | "time_of_day_hint" | null = null;
     if (shot.exif_taken_at) {
       const p1 = [...params, shot.exif_taken_at, win];
       matches = await q<DetectionMatch>(
@@ -402,7 +402,9 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       if (matches.length) method = "exact";
     }
 
-    // --- Pass 2: time-of-day fallback over last `todDays` days ---
+    // --- Pass 2: time-of-day candidates over last `todDays` days ---
+    // These are HINTS only. Without an exact capture date read off the image we do not
+    // claim a lock — filenames and file timestamps are not forensic evidence.
     if (!matches.length && shot.status_bar_local) {
       const tz = shot.tz_offset_min ?? -420; // default PDT
       // captured_at + tz minutes = local time. Compare time-of-day (mod 86400) with wrap.
@@ -433,12 +435,14 @@ export const matchScreenshot = createServerFn({ method: "POST" })
          LIMIT 25`,
         p2,
       );
-      if (matches.length) method = "time_of_day";
+      if (matches.length) method = shot.exif_taken_at ? "time_of_day" : "time_of_day_hint";
     }
 
     const best = matches[0];
-    const status =
-      matches.length === 0
+    const hasExactDate = Boolean(shot.exif_taken_at);
+    const status = !hasExactDate
+      ? "NEEDS_DATE"
+      : matches.length === 0
         ? "NO_MATCH"
         : best.delta_s <= 60
           ? "LOCKED"

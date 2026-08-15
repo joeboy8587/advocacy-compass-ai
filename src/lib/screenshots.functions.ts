@@ -11,6 +11,8 @@ export type VisionExtract = {
   groundspeed_kts: number | null;
   status_bar_time: string | null; // "HH:MM" 24h
   status_bar_period: "AM" | "PM" | null;
+  capture_date: string | null; // "YYYY-MM-DD" read from the radar/map date block
+  capture_date_source: string | null; // where the date was read from
   departure_airport: string | null;
   map_area: string | null;
   notes: string | null;

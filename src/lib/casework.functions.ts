@@ -1585,25 +1585,58 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
     return { owner: d.owner.trim() };
   })
   .handler(async ({ data }) => {
-    const like = `%${data.owner.replace(/\s+/g, "%")}%`;
+    const raw = data.owner.trim();
+    const like = `%${raw.replace(/\s+/g, "%")}%`;
+    // Accept an N-number or a bare ICAO hex in the same box.
+    const isReg = /^n[0-9][0-9a-z]{0,4}$/i.test(raw);
+    const isHex = /^[0-9a-f]{6}$/i.test(raw);
+    const regN = isReg ? raw.replace(/^n/i, "").toUpperCase() : null;
+    const hexQ = isHex ? raw.toLowerCase() : null;
 
-    // Aircraft roster: union FAA master + aircraft_profiles + registered owner cache
+    // Aircraft roster: FAA master + FAA aircraft registry + aircraft_profiles
+    // + canonical operator profiles. Errors are NOT swallowed — a broken query
+    // must surface in the UI instead of looking like "no results".
     const roster = await q<{ icao_hex: string; registration: string | null; owner: string | null; aircraft_mfr: string | null; aircraft_model: string | null }>(
       `
       WITH candidates AS (
         SELECT lower(fm.mode_s_code_hex) AS icao_hex,
-               ('N' || fm.n_number) AS registration,
-               fm.name AS owner,
-               far.mfr_name AS aircraft_mfr,
-               far.model_name AS aircraft_model
+               COALESCE(fm.registration, 'N' || fm.n_number) AS registration,
+               COALESCE(NULLIF(trim(fm.name), ''), fm.owner) AS owner,
+               far.aircraft_manufacturer AS aircraft_mfr,
+               far.aircraft_model AS aircraft_model
         FROM faa_master fm
-        LEFT JOIN faa_aircraft_registry far ON far.code = fm.mfr_mdl_code
-        WHERE fm.name ILIKE $1 AND fm.mode_s_code_hex IS NOT NULL
+        LEFT JOIN faa_aircraft_registry far
+               ON lower(far.mode_s_code_hex) = lower(fm.mode_s_code_hex)
+        WHERE fm.mode_s_code_hex IS NOT NULL
+          AND (fm.name ILIKE $1 OR fm.owner ILIKE $1
+               OR ($2::text IS NOT NULL AND fm.n_number = $2)
+               OR ($3::text IS NOT NULL AND lower(fm.mode_s_code_hex) = $3))
         UNION
-        SELECT ap.icao_hex, ap.registration, ap.registered_owner AS owner,
+        SELECT lower(far.mode_s_code_hex) AS icao_hex,
+               'N' || far.n_number AS registration,
+               far.registrant_name AS owner,
+               far.aircraft_manufacturer, far.aircraft_model
+        FROM faa_aircraft_registry far
+        WHERE far.mode_s_code_hex IS NOT NULL
+          AND (far.registrant_name ILIKE $1
+               OR ($2::text IS NOT NULL AND far.n_number = $2)
+               OR ($3::text IS NOT NULL AND lower(far.mode_s_code_hex) = $3))
+        UNION
+        SELECT lower(ap.icao_hex), ap.registration, ap.registered_owner AS owner,
                NULL::text AS aircraft_mfr, NULL::text AS aircraft_model
         FROM aircraft_profiles ap
         WHERE ap.registered_owner ILIKE $1
+           OR ($2::text IS NOT NULL AND upper(ap.registration) = 'N' || $2)
+           OR ($3::text IS NOT NULL AND lower(ap.icao_hex) = $3)
+        UNION
+        SELECT lower(cop.icao_hex), cop.registration,
+               COALESCE(cop.operator_resolved, cop.faa_registrant_name) AS owner,
+               NULL::text, cop.aircraft_model
+        FROM canonical_operator_profiles cop
+        WHERE cop.operator_resolved ILIKE $1
+           OR cop.faa_registrant_name ILIKE $1
+           OR ($2::text IS NOT NULL AND upper(cop.registration) = 'N' || $2)
+           OR ($3::text IS NOT NULL AND lower(cop.icao_hex) = $3)
       )
       SELECT icao_hex,
              MAX(registration) AS registration,
@@ -1611,22 +1644,33 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
              MAX(aircraft_mfr) AS aircraft_mfr,
              MAX(aircraft_model) AS aircraft_model
       FROM candidates
-      WHERE icao_hex IS NOT NULL
+      WHERE icao_hex IS NOT NULL AND icao_hex <> ''
       GROUP BY icao_hex
       ORDER BY MAX(registration) NULLS LAST
       LIMIT 200
       `,
-      [like],
-    ).catch(() => [] as { icao_hex: string; registration: string | null; owner: string | null; aircraft_mfr: string | null; aircraft_model: string | null }[]);
+      [like, regN, hexQ],
+    );
 
     if (roster.length === 0) {
+      // Offer nearby owner spellings so the operator isn't left guessing.
+      const firstWord = raw.split(/\s+/)[0] ?? raw;
+      const suggestions = await q<{ owner: string; n: number }>(
+        `SELECT name AS owner, count(*)::int AS n
+           FROM faa_master
+          WHERE name ILIKE $1 AND mode_s_code_hex IS NOT NULL
+          GROUP BY name ORDER BY n DESC LIMIT 8`,
+        [`%${firstWord}%`],
+      ).catch(() => [] as { owner: string; n: number }[]);
       return {
-        query: data.owner,
+        query: raw,
         matched_owner_labels: [],
+        suggestions: suggestions.map((s) => s.owner),
         aircraft: [],
         totals: { aircraft_count: 0, detections_30d: 0, low_alt_30d: 0, anomalies_30d: 0, counties: [] },
       } satisfies FleetInvestigation;
     }
+
 
     const hexes = roster.map((r) => r.icao_hex.toLowerCase());
 

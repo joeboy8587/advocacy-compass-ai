@@ -1701,7 +1701,8 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
       GROUP BY lower(d.icao_hex)
       `,
       [hexes],
-    ).catch(() => []);
+    );
+
 
     const anomalies = await q<{ icao_hex: string; n: number }>(
       `SELECT lower(icao_hex) AS icao_hex, count(*)::int AS n

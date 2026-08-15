@@ -252,11 +252,11 @@ function ScreenshotsPage() {
     setParsed((p) => [...next, ...p]);
     setBusy(false);
     toast.success(`${next.length} screenshot${next.length === 1 ? "" : "s"} ready for review`);
-    for (const item of next) void runVision(item.sha256, item.dataUrl, item.file);
+    for (const item of next) void runVision(item.sha256, item.dataUrl);
   }
 
   /* -- vision -- */
-  async function runVision(sha: string, dataUrl: string, file: File) {
+  async function runVision(sha: string, dataUrl: string) {
     setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: true, visionError: null } : x)));
     try {
       const r = await analyzeScreenshot({ data: { image_data_url: dataUrl } });
@@ -318,7 +318,10 @@ function ScreenshotsPage() {
     const p = parsed[idx];
     setParsed((all) => all.map((x, i) => (i === idx ? { ...x, committing: true, commitError: null } : x)));
     try {
-      const statusBarLocal = p.exifNaiveLocal?.match(/(\d{1,2}):(\d{2}):(\d{2})/)?.[0] ?? null;
+      const statusBarLocal =
+        (p.captureTime ? (p.captureTime.length === 5 ? `${p.captureTime}:00` : p.captureTime) : null) ??
+        p.exifNaiveLocal?.match(/(\d{1,2}):(\d{2}):(\d{2})/)?.[0] ??
+        null;
       const res = await upload.mutateAsync({
         data: {
           filename: p.file.name,
@@ -573,9 +576,12 @@ function ScreenshotsPage() {
                   <span className="font-mono text-muted-foreground" title={p.sha256}>
                     sha256:{p.sha256.slice(0, 16)}…
                   </span>
-                  {p.exifNaiveLocal ? (
+                  {p.captureDate && p.captureTime ? (
                     <>
-                      <span className="text-muted-foreground">camera local {p.exifNaiveLocal}</span>
+                      <span className="text-muted-foreground">
+                        capture local {p.captureDate} {p.captureTime}
+                        {p.captureDateSource ? ` · date from ${p.captureDateSource}` : ""}
+                      </span>
                       <span className="text-accent">
                         <Clock className="size-3 inline mr-1" />
                         UTC {formatUtcShort(p.exifTakenAt)}
@@ -583,7 +589,10 @@ function ScreenshotsPage() {
                     </>
                   ) : (
                     <span className="text-primary flex items-center gap-1">
-                      <AlertTriangle className="size-3" /> No EXIF timestamp — will use time-of-day fallback for matching
+                      <AlertTriangle className="size-3" />
+                      {p.captureDate
+                        ? "No capture time read — enter the status-bar clock below"
+                        : "No date block read from the image — enter the exact date below (filenames are not forensic)"}
                     </span>
                   )}
                 </div>
@@ -606,12 +615,46 @@ function ScreenshotsPage() {
                   <Field label="Aircraft">
                     <input value={p.aircraftType} onChange={(e) => updateParsed(i, { aircraftType: e.target.value })} placeholder="Airbus H125" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full" />
                   </Field>
+                  <Field label="Capture date (from image)">
+                    <input
+                      type="date"
+                      value={p.captureDate}
+                      onChange={(e) => {
+                        const date = e.target.value;
+                        const naive = joinNaive(date, p.captureTime);
+                        updateParsed(i, {
+                          captureDate: date,
+                          captureDateSource: "manual entry",
+                          exifNaiveLocal: naive,
+                          exifTakenAt: naiveLocalToUtcIso(naive, p.tzOffsetMin),
+                        });
+                      }}
+                      className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full"
+                    />
+                  </Field>
+                  <Field label="Capture time (status bar)">
+                    <input
+                      type="time"
+                      step={1}
+                      value={p.captureTime}
+                      onChange={(e) => {
+                        const time = e.target.value;
+                        const naive = joinNaive(p.captureDate, time);
+                        updateParsed(i, {
+                          captureTime: time,
+                          exifNaiveLocal: naive,
+                          exifTakenAt: naiveLocalToUtcIso(naive, p.tzOffsetMin),
+                        });
+                      }}
+                      className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full"
+                    />
+                  </Field>
                   <Field label="Screenshot TZ (camera local)">
                     <select
                       value={p.tzOffsetMin}
                       onChange={(e) => {
                         const newOffset = Number(e.target.value);
-                        const iso = naiveLocalToUtcIso(p.exifNaiveLocal, newOffset);
+                        const iso = naiveLocalToUtcIso(joinNaive(p.captureDate, p.captureTime) ?? p.exifNaiveLocal, newOffset);
                         updateParsed(i, { tzOffsetMin: newOffset, exifTakenAt: iso });
                       }}
                       className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full"
@@ -646,7 +689,7 @@ function ScreenshotsPage() {
                     {p.committing ? "Committing…" : "Hash · Store · Match"}
                   </button>
                   <button
-                    onClick={() => runVision(p.sha256, p.dataUrl, p.file)}
+                    onClick={() => runVision(p.sha256, p.dataUrl)}
                     disabled={p.scanning}
                     className="px-3 py-1.5 text-[11px] uppercase tracking-widest border border-accent/60 text-accent rounded-sm hover:bg-accent/10 inline-flex items-center gap-1 disabled:opacity-50"
                   >

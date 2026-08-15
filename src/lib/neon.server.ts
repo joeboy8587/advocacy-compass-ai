@@ -1,11 +1,11 @@
-import { neon, neonConfig } from "@neondatabase/serverless";
+import { neon } from "@neondatabase/serverless";
 
 // The command center runs on a serverless Worker runtime where long-lived TCP
 // pools (node-postgres) are unreliable: a saturated 3-connection pool made
 // dashboard queries queue past the client-side deadline and surface as
 // "Query timed out". The Neon HTTP driver issues each statement as a stateless
 // fetch, so there is no pool to exhaust and no cold socket to wait on.
-neonConfig.fetchConnectionCache = true;
+
 
 const QUERY_TIMEOUT_MS = 20_000;
 

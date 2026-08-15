@@ -1054,18 +1054,22 @@ function MatchBadge({ status, count, deltaS }: { status: string; count: number; 
           ? "border-primary/60 text-primary/80"
           : status === "PENDING"
             ? "border-border text-muted-foreground"
-            : "border-primary text-primary bg-primary/10";
+            : status === "NEEDS_DATE"
+              ? "border-primary text-primary bg-primary/10"
+              : "border-primary text-primary bg-primary/10";
   return (
     <div className="flex items-center gap-1">
       <span className={`px-1.5 py-0.5 text-[10px] uppercase rounded-sm border ${tone} inline-flex items-center gap-1`}>
         {status === "LOCKED" && <CheckCircle2 className="size-3" />}
         {status === "NO_MATCH" && <AlertTriangle className="size-3" />}
         {status === "NO_AIRCRAFT" && <XCircle className="size-3" />}
-        {status}
+        {status === "NEEDS_DATE" && <Calendar className="size-3" />}
+        {status === "NEEDS_DATE" ? "NEEDS DATE" : status}
       </span>
       {count > 0 && (
         <span className="text-[10px] text-muted-foreground">
-          {count} hit{count === 1 ? "" : "s"}{deltaS !== null ? ` · Δ${deltaS}s` : ""}
+          {status === "NEEDS_DATE" ? "time-of-day hints only" : `${count} hit${count === 1 ? "" : "s"}`}
+          {deltaS !== null && status !== "NEEDS_DATE" ? ` · Δ${deltaS}s` : ""}
         </span>
       )}
     </div>

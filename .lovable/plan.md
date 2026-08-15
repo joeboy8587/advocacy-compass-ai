@@ -1,59 +1,41 @@
-## Goal
+# Fix Open-Case Search + Resolve Unknown Subjects
 
-Add an OSINT enrichment layer that pulls from free public sources automatically and exposes paid/rate-limited sources as one-click buttons on the case page. All results are hashed, timestamped, and attached to the case as evidence Josiah can cite.
+## What's wrong today (confirmed against the live database)
 
-## Sources & wiring
+The "Investigate" search on the New Case page always returns zero because the roster query is broken, not because the data is missing:
 
-### Auto (free, run on case open + nightly cron)
-- **OpenSky Network REST** — historical tracks for subject tail/hex (last 30 days), fills gaps our scanner missed. No key needed.
-- **OpenStreetMap Overpass + Nominatim** — for every low-altitude detection, resolve what is underneath (schools, hospitals, residential, prisons). Produces §91.119 proof-of-populated-area evidence rows.
-- **Wayback Machine Save API** — archive every doctrine URL and every OSINT source URL we cite. Returns a permanent snapshot URL stored alongside the SHA-256 hash.
-- **OpenCorporates public search** — resolve owner LLC → officers, jurisdiction, incorporation date, registered agent. Flags shell-company red flags (agent-only address, <12 months old, shared address with other fleet LLCs).
-- **OpenSanctions** — screen every resolved owner + officer name against PEP / sanctions / law-enforcement watchlists.
+- The query joins the aircraft registry on columns that do not exist (`code`, `mfr_name`, `model_name`). Running it returns `column far.code does not exist`.
+- That error is silently swallowed by a fallback that returns an empty list, so the page shows "No aircraft matched" instead of an error.
+- The underlying data is there: AIR METHODS alone has 332 registry rows and 62 operator profiles.
 
-### Manual (button per case, uses your key)
-- **ADS-B RapidAPI (your key)** — "Deep pull" button: full flight history, receiver coverage, squawk history for subject aircraft. Stored in a new `osint_adsb_pulls` table.
-- **OpenCorporates full record** (paid tier if key added later) — deeper officer/filing history.
+For unknown subjects, 16 of 26 cases are missing a tail number and/or an owner — but most can be resolved from data already in the database (example: case WTPR-2026-0014, hex `a17501`, resolves to N193TH / WINGSLEASING LLC via the registry, and 3,504 detections broadcast that same tail).
 
-## What the user sees
+## What gets built
 
-New **OSINT** tab on the case page (`/cases/$caseId`) with four stacked panels:
+### 1. Operator / entity search that actually returns results
+- Repair the roster query to join the registry on its real columns (mode-S hex and N-number) and pull manufacturer/model from the correct fields.
+- Broaden matching so the box accepts an owner name, an N-number, or an ICAO hex — not just an owner name.
+- Stop hiding failures: if a query errors, the panel shows a clear red message with a Retry button instead of a misleading "0 aircraft".
+- Show a helpful empty state that suggests shorter spellings and offers nearby owner-name matches when nothing hits exactly.
 
-1. **Flight History** — OpenSky auto-pull + "Deep ADS-B pull (RapidAPI)" button. Table of flights with date, route, min altitude, duration.
-2. **Ownership Web** — OpenCorporates card for subject owner: officers, agent, incorporation, sibling LLCs at same address. Red-flag badges.
-3. **Watchlist Screening** — OpenSanctions hits for owner + every officer name. Green check or red flag with source citation.
-4. **Ground Truth** — Overpass results for each low-alt detection: "1,650 ft over Ridgecrest Elementary School (34.6218, -117.6784) — 14 CFR §91.119(b) requires 1,000 ft."
+### 2. Identity Resolver for unknown cases
+A new "Resolve Identity" panel on any case missing a tail or owner. It gathers candidates from every available source, ranks them, and shows plain-English confidence:
 
-Each panel has an **Archive to Wayback** button that snapshots the source URL and stores the archive link in the case's evidence chain.
+- FAA master registry and FAA aircraft registry, matched on the case's ICAO hex
+- The tail number actually broadcast in that aircraft's own detections (majority vote)
+- Callsign fingerprint: repeated callsigns such as `COBRA67` or `TORCH61` flag military/agency operators, and hex-block ranges identify military allocations
+- Canonical operator profiles and aircraft profiles (KCSO / medical flags)
+- Tail numbers read off linked radar screenshots in the vault
 
-A small **OSINT** badge appears on the case card in the main list when enrichment has run, with a count of red-flag findings.
+Each candidate shows what it says, where it came from, and how strong it is. One click applies the chosen identity to the case (writes tail, owner, and an audit note into the case record), and there's a "Mark as genuinely unidentified" option for airframes that stay dark.
 
-## Josiah integration
+### 3. Unknown-subject sweep on the case list
+A banner listing every case still missing an identity, with a one-click "Auto-resolve all high-confidence" action so the backlog clears in one pass.
 
-`gatherContext()` in `src/lib/ai.functions.ts` gains an OSINT block for the bound case: OpenCorporates officer names, sanctions hits, Overpass ground-truth strings, OpenSky flight count. Josiah cites them by source ("per OpenCorporates filing dated…", "per OpenSanctions PEP list…") — never invents.
+## Technical notes
 
-## Technical notes (for the record, not required reading)
-
-- New table `osint_findings` (case_id, source, subject, payload jsonb, source_url, wayback_url, sha256, retrieved_at) with grants + RLS.
-- New table `osint_adsb_pulls` for RapidAPI results (larger payloads, separate quota tracking).
-- Secret `RAPIDAPI_ADSB_KEY` added via secrets tool (you'll paste the key).
-- New server-function file `src/lib/osint.functions.ts` with `enrichCase`, `deepAdsbPull`, `archiveUrl`, `screenSanctions`, `resolveOwner`, `groundTruthDetection`.
-- Nightly cron endpoint `/api/public/osint/nightly` re-runs free enrichers on all active cases (DRAFT/REVIEW/CONFIRMED).
-- OpenSky and Overpass are rate-limited — the enricher batches and caches by (source, subject, day) so the same call in the same day is a cache hit.
-- Wayback archives every source_url so the chain-of-custody survives even if the upstream page changes.
-
-## Out of scope for this pass
-
-- Sentinel Hub / NASA FIRMS satellite imagery (needs paid key + heavier UI; can add later).
-- CourtListener/RECAP scraping (separate pass — belongs with a broader "legal filings" module).
-- SerpAPI (needs paid key; skip until you decide).
-
-## Deliverable checklist
-
-1. `RAPIDAPI_ADSB_KEY` secret added (I'll prompt you for the value).
-2. `osint_findings` + `osint_adsb_pulls` migrations with grants/RLS.
-3. `src/lib/osint.functions.ts` server functions.
-4. `/api/public/osint/nightly` cron endpoint (shared-secret auth).
-5. OSINT tab on `/cases/$caseId` with the four panels + Wayback buttons.
-6. OSINT badge on case list cards.
-7. Josiah context updated to include OSINT findings for bound cases.
+- `getFleetInvestigation` in `src/lib/casework.functions.ts`: fix the `faa_aircraft_registry` join (`mode_s_code_hex` / `n_number`, `aircraft_manufacturer`, `aircraft_model`), extend the WHERE to match reg/hex, and remove the `.catch(() => [])` swallows so real errors propagate to the UI.
+- New server functions `resolveSubjectIdentity` (read-only candidate gathering) and `applySubjectIdentity` (updates `cases.subject_reg` / `subject_owner` / `subject_icao` plus a reviewer note).
+- Sources queried: `faa_master`, `faa_aircraft_registry`, `detections` (registration + callsign majority), `canonical_operator_profiles`, `aircraft_profiles`, `radar_screenshots`.
+- UI: error/retry handling in `src/routes/cases.new.tsx`, resolver panel in `src/routes/cases.$caseId.tsx`, sweep banner in `src/routes/cases.tsx`.
+- Audit other `.catch(() => [])` fallbacks in the casework layer that could hide the same class of failure.

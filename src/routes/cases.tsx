@@ -1,9 +1,9 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, Plus, Sparkles, Loader2, Layers, Merge } from "lucide-react";
+import { FolderOpen, Plus, Sparkles, Loader2, Layers, Merge, Fingerprint } from "lucide-react";
 import { useState } from "react";
 import { getCases } from "@/lib/watchtower.functions";
-import { getSuggestedCases, createCase, getDuplicateGroups, mergeDuplicateCases, consolidateCluster } from "@/lib/casework.functions";
+import { getSuggestedCases, createCase, getDuplicateGroups, mergeDuplicateCases, consolidateCluster, listUnknownSubjects, autoResolveUnknownSubjects } from "@/lib/casework.functions";
 import { z } from "zod";
 
 
@@ -346,3 +346,93 @@ function DuplicatesPanel() {
 }
 
 
+
+// ============================================================
+// UNKNOWN SUBJECTS — sweep + one-click auto-resolve
+// ============================================================
+function UnknownSubjectsPanel() {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const q = useQuery({
+    queryKey: ["unknown-subjects"],
+    queryFn: () => listUnknownSubjects(),
+  });
+
+  const auto = useMutation({
+    mutationFn: () => autoResolveUnknownSubjects({ data: { minConfidence: 85 } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["unknown-subjects"] });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+    },
+  });
+
+  const rows = q.data ?? [];
+  if (!q.isLoading && rows.length === 0) return null;
+
+  const resolvable = rows.filter((r) => r.confidence >= 85).length;
+
+  return (
+    <section className="panel scanline p-4 border-accent/40">
+      <div className="flex items-center justify-between">
+        <button onClick={() => setOpen((v) => !v)} className="text-left">
+          <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">
+            <Fingerprint className="size-4" /> Unidentified Subjects
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {q.isLoading ? "Checking cases…" : `${rows.length} case${rows.length === 1 ? "" : "s"} missing a tail number or owner · ${resolvable} can be resolved automatically`}
+          </p>
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            disabled={auto.isPending || resolvable === 0}
+            onClick={() => auto.mutate()}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-[10px] uppercase tracking-widest bg-accent text-accent-foreground rounded-sm hover:bg-accent/80 disabled:opacity-40"
+          >
+            {auto.isPending ? <Loader2 className="size-3 animate-spin" /> : <Fingerprint className="size-3" />}
+            Auto-resolve high confidence
+          </button>
+          <button onClick={() => setOpen((v) => !v)} className="px-2 py-1 text-[10px] uppercase tracking-widest border border-border rounded-sm hover:border-accent">
+            {open ? "Hide" : "Show"}
+          </button>
+        </div>
+      </div>
+
+      {auto.isSuccess && (
+        <div className="text-[11px] neon-text-green mt-2">
+          Resolved {auto.data?.resolved} of {auto.data?.scanned} scanned cases.
+        </div>
+      )}
+      {auto.isError && <div className="text-[11px] text-destructive mt-2">{(auto.error as Error)?.message}</div>}
+
+      {open && (
+        <div className="mt-3 space-y-2">
+          {rows.map((r) => (
+            <Link
+              key={r.case_id}
+              to="/cases/$caseId"
+              params={{ caseId: r.case_id }}
+              className="block border border-border rounded-sm p-3 hover:border-accent"
+            >
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono neon-text-green">{r.case_id}</span>
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                  missing {r.missing.join(" + ")} · {r.status}
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1 font-mono">
+                hex {r.subject_icao ?? "—"} · tail {r.subject_reg || "UNKNOWN"} · owner {r.subject_owner || "UNKNOWN"}
+              </div>
+              {(r.suggested_reg || r.suggested_owner) && (
+                <div className="text-[11px] mt-1">
+                  <span className="text-muted-foreground">Suggested:</span>{" "}
+                  <span className="font-mono text-accent">{r.suggested_reg ?? "—"} / {r.suggested_owner ?? "—"}</span>{" "}
+                  <span className="text-muted-foreground">via {r.suggested_source} ({Math.round(r.confidence)}%)</span>
+                </div>
+              )}
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

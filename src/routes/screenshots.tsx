@@ -32,6 +32,9 @@ type ParsedFile = {
   dataUrl: string;
   exifNaiveLocal: string | null;
   exifTakenAt: string | null;
+  captureDate: string;        // YYYY-MM-DD read from the image's date block (forensic)
+  captureTime: string;        // HH:MM:SS local (status bar clock)
+  captureDateSource: string | null;
   rawExif: Record<string, unknown> | null;
   tail: string;
   icaoHex: string;
@@ -63,10 +66,22 @@ function statusBarTo24h(time: string | null, period: "AM" | "PM" | null): string
   return `${String(h).padStart(2, "0")}:${min}:00`;
 }
 
-function dateFromFile(file: File): string {
-  const d = new Date(file.lastModified || Date.now());
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+/** Forensic rule: dates come from the image's own date block or EXIF — never from the
+ *  filename or the file's lastModified stamp (both are unreliable after transfer). */
+function splitNaive(naive: string | null): { date: string; time: string } {
+  if (!naive) return { date: "", time: "" };
+  const m = naive.match(/(\d{4})\D(\d{1,2})\D(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return { date: "", time: "" };
+  const pad = (n: string) => n.padStart(2, "0");
+  return {
+    date: `${m[1]}-${pad(m[2])}-${pad(m[3])}`,
+    time: `${pad(m[4])}:${m[5]}:${m[6] ?? "00"}`,
+  };
+}
+
+function joinNaive(date: string, time: string): string | null {
+  if (!date || !time) return null;
+  return `${date} ${time.length === 5 ? `${time}:00` : time}`;
 }
 
 function naiveLocalToUtcIso(naive: string | null, tzOffsetMin: number): string | null {
@@ -208,12 +223,16 @@ function ScreenshotsPage() {
         /* no exif */
       }
       const isoUtc = naiveLocalToUtcIso(naiveLocal, defaultTzMin);
+      const parts = splitNaive(naiveLocal);
       next.push({
         file,
         sha256: sha,
         dataUrl,
         exifNaiveLocal: naiveLocal,
         exifTakenAt: isoUtc,
+        captureDate: parts.date,
+        captureTime: parts.time,
+        captureDateSource: parts.date ? "EXIF" : null,
         rawExif: raw,
         tail: guessTail(file.name),
         icaoHex: "",
@@ -233,11 +252,11 @@ function ScreenshotsPage() {
     setParsed((p) => [...next, ...p]);
     setBusy(false);
     toast.success(`${next.length} screenshot${next.length === 1 ? "" : "s"} ready for review`);
-    for (const item of next) void runVision(item.sha256, item.dataUrl, item.file);
+    for (const item of next) void runVision(item.sha256, item.dataUrl);
   }
 
   /* -- vision -- */
-  async function runVision(sha: string, dataUrl: string, file: File) {
+  async function runVision(sha: string, dataUrl: string) {
     setParsed((all) => all.map((x) => (x.sha256 === sha ? { ...x, scanning: true, visionError: null } : x)));
     try {
       const r = await analyzeScreenshot({ data: { image_data_url: dataUrl } });
@@ -250,9 +269,14 @@ function ScreenshotsPage() {
       setParsed((all) =>
         all.map((x): ParsedFile => {
           if (x.sha256 !== sha) return x;
-          let naive = x.exifNaiveLocal;
           const t = statusBarTo24h(v.status_bar_time, v.status_bar_period);
-          if (!naive && t) naive = `${dateFromFile(file)} ${t}`;
+          // Date block read off the image always wins — EXIF is second, filename is never used.
+          const date = v.capture_date || x.captureDate || "";
+          const time = t || x.captureTime || "";
+          const dateSource = v.capture_date
+            ? (v.capture_date_source || "image date block")
+            : x.captureDateSource;
+          const naive = joinNaive(date, time) ?? x.exifNaiveLocal;
           const iso = naiveLocalToUtcIso(naive, x.tzOffsetMin);
           return {
             ...x,
@@ -267,10 +291,14 @@ function ScreenshotsPage() {
             notes: x.notes || (v.notes ?? ""),
             exifNaiveLocal: naive,
             exifTakenAt: iso ?? x.exifTakenAt,
+            captureDate: date,
+            captureTime: time,
+            captureDateSource: dateSource,
           };
         }),
       );
       const foundFields = [
+        v.capture_date && "date",
         v.registration && "tail",
         v.icao_hex && "ICAO",
         v.altitude_ft && "altitude",
@@ -290,7 +318,10 @@ function ScreenshotsPage() {
     const p = parsed[idx];
     setParsed((all) => all.map((x, i) => (i === idx ? { ...x, committing: true, commitError: null } : x)));
     try {
-      const statusBarLocal = p.exifNaiveLocal?.match(/(\d{1,2}):(\d{2}):(\d{2})/)?.[0] ?? null;
+      const statusBarLocal =
+        (p.captureTime ? (p.captureTime.length === 5 ? `${p.captureTime}:00` : p.captureTime) : null) ??
+        p.exifNaiveLocal?.match(/(\d{1,2}):(\d{2}):(\d{2})/)?.[0] ??
+        null;
       const res = await upload.mutateAsync({
         data: {
           filename: p.file.name,
@@ -545,9 +576,12 @@ function ScreenshotsPage() {
                   <span className="font-mono text-muted-foreground" title={p.sha256}>
                     sha256:{p.sha256.slice(0, 16)}…
                   </span>
-                  {p.exifNaiveLocal ? (
+                  {p.captureDate && p.captureTime ? (
                     <>
-                      <span className="text-muted-foreground">camera local {p.exifNaiveLocal}</span>
+                      <span className="text-muted-foreground">
+                        capture local {p.captureDate} {p.captureTime}
+                        {p.captureDateSource ? ` · date from ${p.captureDateSource}` : ""}
+                      </span>
                       <span className="text-accent">
                         <Clock className="size-3 inline mr-1" />
                         UTC {formatUtcShort(p.exifTakenAt)}
@@ -555,7 +589,10 @@ function ScreenshotsPage() {
                     </>
                   ) : (
                     <span className="text-primary flex items-center gap-1">
-                      <AlertTriangle className="size-3" /> No EXIF timestamp — will use time-of-day fallback for matching
+                      <AlertTriangle className="size-3" />
+                      {p.captureDate
+                        ? "No capture time read — enter the status-bar clock below"
+                        : "No date block read from the image — enter the exact date below (filenames are not forensic)"}
                     </span>
                   )}
                 </div>
@@ -578,12 +615,46 @@ function ScreenshotsPage() {
                   <Field label="Aircraft">
                     <input value={p.aircraftType} onChange={(e) => updateParsed(i, { aircraftType: e.target.value })} placeholder="Airbus H125" className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full" />
                   </Field>
+                  <Field label="Capture date (from image)">
+                    <input
+                      type="date"
+                      value={p.captureDate}
+                      onChange={(e) => {
+                        const date = e.target.value;
+                        const naive = joinNaive(date, p.captureTime);
+                        updateParsed(i, {
+                          captureDate: date,
+                          captureDateSource: "manual entry",
+                          exifNaiveLocal: naive,
+                          exifTakenAt: naiveLocalToUtcIso(naive, p.tzOffsetMin),
+                        });
+                      }}
+                      className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full"
+                    />
+                  </Field>
+                  <Field label="Capture time (status bar)">
+                    <input
+                      type="time"
+                      step={1}
+                      value={p.captureTime}
+                      onChange={(e) => {
+                        const time = e.target.value;
+                        const naive = joinNaive(p.captureDate, time);
+                        updateParsed(i, {
+                          captureTime: time,
+                          exifNaiveLocal: naive,
+                          exifTakenAt: naiveLocalToUtcIso(naive, p.tzOffsetMin),
+                        });
+                      }}
+                      className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full"
+                    />
+                  </Field>
                   <Field label="Screenshot TZ (camera local)">
                     <select
                       value={p.tzOffsetMin}
                       onChange={(e) => {
                         const newOffset = Number(e.target.value);
-                        const iso = naiveLocalToUtcIso(p.exifNaiveLocal, newOffset);
+                        const iso = naiveLocalToUtcIso(joinNaive(p.captureDate, p.captureTime) ?? p.exifNaiveLocal, newOffset);
                         updateParsed(i, { tzOffsetMin: newOffset, exifTakenAt: iso });
                       }}
                       className="bg-secondary/30 border border-border rounded-sm px-2 py-1 text-xs font-mono outline-none focus:border-accent w-full"
@@ -618,7 +689,7 @@ function ScreenshotsPage() {
                     {p.committing ? "Committing…" : "Hash · Store · Match"}
                   </button>
                   <button
-                    onClick={() => runVision(p.sha256, p.dataUrl, p.file)}
+                    onClick={() => runVision(p.sha256, p.dataUrl)}
                     disabled={p.scanning}
                     className="px-3 py-1.5 text-[11px] uppercase tracking-widest border border-accent/60 text-accent rounded-sm hover:bg-accent/10 inline-flex items-center gap-1 disabled:opacity-50"
                   >
@@ -983,18 +1054,22 @@ function MatchBadge({ status, count, deltaS }: { status: string; count: number; 
           ? "border-primary/60 text-primary/80"
           : status === "PENDING"
             ? "border-border text-muted-foreground"
-            : "border-primary text-primary bg-primary/10";
+            : status === "NEEDS_DATE"
+              ? "border-primary text-primary bg-primary/10"
+              : "border-primary text-primary bg-primary/10";
   return (
     <div className="flex items-center gap-1">
       <span className={`px-1.5 py-0.5 text-[10px] uppercase rounded-sm border ${tone} inline-flex items-center gap-1`}>
         {status === "LOCKED" && <CheckCircle2 className="size-3" />}
         {status === "NO_MATCH" && <AlertTriangle className="size-3" />}
         {status === "NO_AIRCRAFT" && <XCircle className="size-3" />}
-        {status}
+        {status === "NEEDS_DATE" && <Calendar className="size-3" />}
+        {status === "NEEDS_DATE" ? "NEEDS DATE" : status}
       </span>
       {count > 0 && (
         <span className="text-[10px] text-muted-foreground">
-          {count} hit{count === 1 ? "" : "s"}{deltaS !== null ? ` · Δ${deltaS}s` : ""}
+          {status === "NEEDS_DATE" ? "time-of-day hints only" : `${count} hit${count === 1 ? "" : "s"}`}
+          {deltaS !== null && status !== "NEEDS_DATE" ? ` · Δ${deltaS}s` : ""}
         </span>
       )}
     </div>

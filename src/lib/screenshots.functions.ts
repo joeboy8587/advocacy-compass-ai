@@ -11,6 +11,8 @@ export type VisionExtract = {
   groundspeed_kts: number | null;
   status_bar_time: string | null; // "HH:MM" 24h
   status_bar_period: "AM" | "PM" | null;
+  capture_date: string | null; // "YYYY-MM-DD" read from the radar/map date block
+  capture_date_source: string | null; // where the date was read from
   departure_airport: string | null;
   map_area: string | null;
   notes: string | null;
@@ -28,7 +30,8 @@ export const analyzeScreenshot = createServerFn({ method: "POST" })
 
     const system = `You are Josiah Vision — a forensic radar-screenshot OCR/extractor for Watchtower.
 Read a Flightradar24 / ADS-B Exchange / similar tracker screenshot and extract structured aircraft data.
-Read the STATUS BAR clock at the top of the phone (not EXIF) for the time. Return ONLY a JSON object — no prose, no markdown.
+Read the STATUS BAR clock at the top of the phone (not EXIF) for the time.
+CRITICAL: also find the DATE. Look for a date block anywhere in the image — the tracker's map/playback date label, a flight-date row, a timeline header, or the phone's lock-screen date. NEVER guess a date from the filename. If no date is legible anywhere, return null for capture_date. Return ONLY a JSON object — no prose, no markdown.
 Schema:
 {
   "registration": "<N-number, uppercase, or null>",
@@ -39,6 +42,8 @@ Schema:
   "groundspeed_kts": <integer or null>,
   "status_bar_time": "<HH:MM 24h or null>",
   "status_bar_period": "<AM|PM or null>",
+  "capture_date": "<YYYY-MM-DD read from the radar/map date block, playback date label, or flight-date text visible in the screenshot; null if no date is visible>",
+  "capture_date_source": "<short description of where the date was read, e.g. 'map date label', 'playback bar', or null>",
   "departure_airport": "<IATA/ICAO or null>",
   "map_area": "<area/county/city visible on map or null>",
   "notes": "<short note about other aircraft visible, flight-path shape/color, or null>"
@@ -116,6 +121,10 @@ Schema:
         groundspeed_kts: typeof parsed.groundspeed_kts === "number" ? Math.round(parsed.groundspeed_kts) : null,
         status_bar_time: parsed.status_bar_time ?? null,
         status_bar_period: parsed.status_bar_period === "AM" || parsed.status_bar_period === "PM" ? parsed.status_bar_period : null,
+        capture_date: typeof parsed.capture_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.capture_date.trim())
+          ? parsed.capture_date.trim()
+          : null,
+        capture_date_source: parsed.capture_date_source ?? null,
         departure_airport: parsed.departure_airport ?? null,
         map_area: parsed.map_area ?? null,
         notes: parsed.notes ?? null,
@@ -374,7 +383,7 @@ export const matchScreenshot = createServerFn({ method: "POST" })
 
     // --- Pass 1: exact-time window around EXIF/synthesized UTC ---
     let matches: DetectionMatch[] = [];
-    let method: "exact" | "time_of_day" | null = null;
+    let method: "exact" | "time_of_day" | "time_of_day_hint" | null = null;
     if (shot.exif_taken_at) {
       const p1 = [...params, shot.exif_taken_at, win];
       matches = await q<DetectionMatch>(
@@ -393,7 +402,9 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       if (matches.length) method = "exact";
     }
 
-    // --- Pass 2: time-of-day fallback over last `todDays` days ---
+    // --- Pass 2: time-of-day candidates over last `todDays` days ---
+    // These are HINTS only. Without an exact capture date read off the image we do not
+    // claim a lock — filenames and file timestamps are not forensic evidence.
     if (!matches.length && shot.status_bar_local) {
       const tz = shot.tz_offset_min ?? -420; // default PDT
       // captured_at + tz minutes = local time. Compare time-of-day (mod 86400) with wrap.
@@ -424,12 +435,14 @@ export const matchScreenshot = createServerFn({ method: "POST" })
          LIMIT 25`,
         p2,
       );
-      if (matches.length) method = "time_of_day";
+      if (matches.length) method = shot.exif_taken_at ? "time_of_day" : "time_of_day_hint";
     }
 
     const best = matches[0];
-    const status =
-      matches.length === 0
+    const hasExactDate = Boolean(shot.exif_taken_at);
+    const status = !hasExactDate
+      ? "NEEDS_DATE"
+      : matches.length === 0
         ? "NO_MATCH"
         : best.delta_s <= 60
           ? "LOCKED"

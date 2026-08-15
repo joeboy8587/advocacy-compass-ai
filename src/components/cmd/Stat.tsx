@@ -30,7 +30,7 @@ export function Stat({
         </div>
         {Icon && <Icon className={`size-4 ${toneClass}`} />}
       </div>
-      <div className={`mt-3 text-3xl font-bold tabular-nums ${toneClass}`}>{value}</div>
+      <div suppressHydrationWarning className={`mt-3 text-3xl font-bold tabular-nums ${toneClass}`}>{value}</div>
       {hint && (
         <div className="mt-1 text-[10px] text-muted-foreground uppercase tracking-wider">
           {hint}

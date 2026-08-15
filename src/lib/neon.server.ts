@@ -1,41 +1,30 @@
-import { Pool } from "pg";
+import { neon } from "@neondatabase/serverless";
 
-// Singleton pool — reuse across server function invocations
+// The command center runs on a serverless Worker runtime where long-lived TCP
+// pools (node-postgres) are unreliable: a saturated 3-connection pool made
+// dashboard queries queue past the client-side deadline and surface as
+// "Query timed out". The Neon HTTP driver issues each statement as a stateless
+// fetch, so there is no pool to exhaust and no cold socket to wait on.
+
+
+const QUERY_TIMEOUT_MS = 20_000;
+
+type SqlClient = ReturnType<typeof neon>;
+
 declare global {
   // eslint-disable-next-line no-var
-  var __neonPool: Pool | undefined;
+  var __neonSql: SqlClient | undefined;
 }
 
-// Hard cap for any single SQL round-trip. Cloudflare Workers cancel a
-// request after ~30s of hang, so we must fail-fast individual queries
-// well before then and let callers report a real error instead.
-const STATEMENT_TIMEOUT_MS = 8_000;
-
-export function getNeonPool(): Pool {
-  if (!globalThis.__neonPool) {
+function getSql(): SqlClient {
+  if (!globalThis.__neonSql) {
     const connectionString = process.env.NEON_DATABASE_URL;
     if (!connectionString) {
       throw new Error("NEON_DATABASE_URL is not set");
     }
-    globalThis.__neonPool = new Pool({
-      connectionString,
-      ssl: { rejectUnauthorized: false },
-      max: 3,
-      idleTimeoutMillis: 30_000,
-      // Neon serverless compute can take 5-10s to wake from suspend.
-      // Give the initial handshake enough runway so we don't return
-      // fake zeros to the operational dashboard.
-      connectionTimeoutMillis: 15_000,
-      statement_timeout: STATEMENT_TIMEOUT_MS,
-      query_timeout: STATEMENT_TIMEOUT_MS,
-    } as ConstructorParameters<typeof Pool>[0]);
-
-    globalThis.__neonPool.on("error", (err) => {
-      // A background socket error should not crash the worker.
-      console.error("[neon pool] idle client error:", err.message);
-    });
+    globalThis.__neonSql = neon(connectionString, { fullResults: true });
   }
-  return globalThis.__neonPool;
+  return globalThis.__neonSql;
 }
 
 export async function neonQuery<T = unknown>(
@@ -43,20 +32,23 @@ export async function neonQuery<T = unknown>(
   params: unknown[] = [],
   opts: { timeoutMs?: number } = {},
 ): Promise<T[]> {
-  const pool = getNeonPool();
-  const timeoutMs = opts.timeoutMs ?? STATEMENT_TIMEOUT_MS + 2_000;
+  const sql = getSql();
+  const timeoutMs = opts.timeoutMs ?? QUERY_TIMEOUT_MS;
 
-  // Belt-and-suspenders: race the query against a JS timer so we never
-  // wait for a hung socket. The server-side statement_timeout should fire
-  // first and produce a clean pg error; this is the fallback.
-  const timer = new Promise<never>((_, reject) => {
-    const t = setTimeout(() => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
       reject(new Error(`Query timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-    // Best-effort unref for Node envs; Workers ignore.
-    (t as unknown as { unref?: () => void }).unref?.();
   });
 
-  const res = await Promise.race([pool.query(text, params as never[]), timer]);
-  return (res as { rows: T[] }).rows;
+  try {
+    const res = (await Promise.race([
+      sql.query(text, params as never[]),
+      deadline,
+    ])) as { rows: T[] };
+    return res.rows;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

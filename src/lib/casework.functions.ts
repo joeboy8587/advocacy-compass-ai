@@ -1569,7 +1569,9 @@ export type FleetAircraft = {
 export type FleetInvestigation = {
   query: string;
   matched_owner_labels: string[];
+  suggestions?: string[];
   aircraft: FleetAircraft[];
+
   totals: {
     aircraft_count: number;
     detections_30d: number;

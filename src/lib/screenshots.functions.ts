@@ -30,7 +30,8 @@ export const analyzeScreenshot = createServerFn({ method: "POST" })
 
     const system = `You are Josiah Vision — a forensic radar-screenshot OCR/extractor for Watchtower.
 Read a Flightradar24 / ADS-B Exchange / similar tracker screenshot and extract structured aircraft data.
-Read the STATUS BAR clock at the top of the phone (not EXIF) for the time. Return ONLY a JSON object — no prose, no markdown.
+Read the STATUS BAR clock at the top of the phone (not EXIF) for the time.
+CRITICAL: also find the DATE. Look for a date block anywhere in the image — the tracker's map/playback date label, a flight-date row, a timeline header, or the phone's lock-screen date. NEVER guess a date from the filename. If no date is legible anywhere, return null for capture_date. Return ONLY a JSON object — no prose, no markdown.
 Schema:
 {
   "registration": "<N-number, uppercase, or null>",
@@ -41,6 +42,8 @@ Schema:
   "groundspeed_kts": <integer or null>,
   "status_bar_time": "<HH:MM 24h or null>",
   "status_bar_period": "<AM|PM or null>",
+  "capture_date": "<YYYY-MM-DD read from the radar/map date block, playback date label, or flight-date text visible in the screenshot; null if no date is visible>",
+  "capture_date_source": "<short description of where the date was read, e.g. 'map date label', 'playback bar', or null>",
   "departure_airport": "<IATA/ICAO or null>",
   "map_area": "<area/county/city visible on map or null>",
   "notes": "<short note about other aircraft visible, flight-path shape/color, or null>"
@@ -118,6 +121,10 @@ Schema:
         groundspeed_kts: typeof parsed.groundspeed_kts === "number" ? Math.round(parsed.groundspeed_kts) : null,
         status_bar_time: parsed.status_bar_time ?? null,
         status_bar_period: parsed.status_bar_period === "AM" || parsed.status_bar_period === "PM" ? parsed.status_bar_period : null,
+        capture_date: typeof parsed.capture_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.capture_date.trim())
+          ? parsed.capture_date.trim()
+          : null,
+        capture_date_source: parsed.capture_date_source ?? null,
         departure_airport: parsed.departure_airport ?? null,
         map_area: parsed.map_area ?? null,
         notes: parsed.notes ?? null,

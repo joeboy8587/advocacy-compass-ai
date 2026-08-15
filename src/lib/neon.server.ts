@@ -52,3 +52,54 @@ export async function neonQuery<T = unknown>(
     if (timer) clearTimeout(timer);
   }
 }
+
+/**
+ * Neon's HTTP driver sends every statement as a prepared statement, and Postgres
+ * rejects prepared statements that contain more than one command
+ * ("cannot insert multiple commands into a prepared statement").
+ * Schema bootstraps are written as multi-statement DDL scripts, so split them on
+ * top-level semicolons and run each command on its own.
+ */
+export async function neonExecScript(script: string): Promise<void> {
+  const statements: string[] = [];
+  let current = "";
+  let inSingle = false;
+  let inDouble = false;
+  let inDollar: string | null = null;
+
+  for (let i = 0; i < script.length; i++) {
+    const ch = script[i];
+    if (inDollar) {
+      current += ch;
+      if (script.startsWith(inDollar, i)) {
+        current += script.slice(i + 1, i + inDollar.length);
+        i += inDollar.length - 1;
+        inDollar = null;
+      }
+      continue;
+    }
+    if (!inSingle && !inDouble && ch === "$") {
+      const m = /^\$[A-Za-z_]*\$/.exec(script.slice(i));
+      if (m) {
+        inDollar = m[0];
+        current += m[0];
+        i += m[0].length - 1;
+        continue;
+      }
+    }
+    if (ch === "'" && !inDouble) inSingle = !inSingle;
+    else if (ch === '"' && !inSingle) inDouble = !inDouble;
+    if (ch === ";" && !inSingle && !inDouble) {
+      statements.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  statements.push(current);
+
+  for (const stmt of statements) {
+    if (!stmt.trim()) continue;
+    await neonQuery(stmt);
+  }
+}

@@ -619,7 +619,9 @@ function VerifyTab({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-4">
+      <IdentityResolver caseId={caseId} />
       <section className="panel p-5">
+
         <div className="text-xs uppercase tracking-widest neon-text-green mb-3 flex items-center gap-2">
           <Search className="size-4" /> FAA Registry Cross-Check
         </div>

@@ -134,11 +134,16 @@ async function q<T = unknown>(text: string, params: unknown[] = []): Promise<T[]
   return neonQuery<T>(text, params);
 }
 
+async function exec(text: string): Promise<void> {
+  const { neonExecScript } = await import("./neon.server");
+  return neonExecScript(text);
+}
+
 let schemaReady: Promise<void> | null = null;
 async function ensureSchema() {
   if (!schemaReady) {
     schemaReady = (async () => {
-      await q(`
+      await exec(`
         CREATE TABLE IF NOT EXISTS radar_screenshots (
           id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           uploaded_at   timestamptz NOT NULL DEFAULT now(),

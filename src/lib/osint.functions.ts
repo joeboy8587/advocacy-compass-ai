@@ -13,6 +13,11 @@ async function q<T = unknown>(text: string, params: unknown[] = []): Promise<T[]
   return neonQuery<T>(text, params);
 }
 
+async function exec(text: string): Promise<void> {
+  const { neonExecScript } = await import("./neon.server");
+  return neonExecScript(text);
+}
+
 async function sha256(s: string): Promise<string> {
   const { createHash } = await import("node:crypto");
   return createHash("sha256").update(s).digest("hex");
@@ -54,7 +59,7 @@ async function safeFetchJson(url: string, init?: RequestInit, timeoutMs = 8000):
 let tablesEnsured = false;
 async function ensureTables() {
   if (tablesEnsured) return;
-  await q(`
+  await exec(`
     CREATE TABLE IF NOT EXISTS osint_findings (
       id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       case_id       text NOT NULL,

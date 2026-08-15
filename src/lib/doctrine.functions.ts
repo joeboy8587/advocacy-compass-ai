@@ -5,10 +5,15 @@ async function q<T = unknown>(text: string, params: unknown[] = []): Promise<T[]
   return neonQuery<T>(text, params);
 }
 
+async function exec(text: string): Promise<void> {
+  const { neonExecScript } = await import("./neon.server");
+  return neonExecScript(text);
+}
+
 let _ensured = false;
 async function ensureTable() {
   if (_ensured) return;
-  await q(`
+  await exec(`
     CREATE TABLE IF NOT EXISTS doctrine_documents (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       title text NOT NULL,

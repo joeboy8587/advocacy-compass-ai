@@ -5,8 +5,8 @@ const MODEL = "google/gemini-3-flash-preview";
 
 // ---- schema (lazy, idempotent) ----
 async function ensureTable() {
-  const { neonQuery } = await import("./neon.server");
-  await neonQuery(`
+  const { neonExecScript } = await import("./neon.server");
+  await neonExecScript(`
     CREATE TABLE IF NOT EXISTS daily_narratives (
       id BIGSERIAL PRIMARY KEY,
       narrative_date DATE NOT NULL UNIQUE,

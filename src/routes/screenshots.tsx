@@ -32,6 +32,9 @@ type ParsedFile = {
   dataUrl: string;
   exifNaiveLocal: string | null;
   exifTakenAt: string | null;
+  captureDate: string;        // YYYY-MM-DD read from the image's date block (forensic)
+  captureTime: string;        // HH:MM:SS local (status bar clock)
+  captureDateSource: string | null;
   rawExif: Record<string, unknown> | null;
   tail: string;
   icaoHex: string;
@@ -63,10 +66,22 @@ function statusBarTo24h(time: string | null, period: "AM" | "PM" | null): string
   return `${String(h).padStart(2, "0")}:${min}:00`;
 }
 
-function dateFromFile(file: File): string {
-  const d = new Date(file.lastModified || Date.now());
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+/** Forensic rule: dates come from the image's own date block or EXIF — never from the
+ *  filename or the file's lastModified stamp (both are unreliable after transfer). */
+function splitNaive(naive: string | null): { date: string; time: string } {
+  if (!naive) return { date: "", time: "" };
+  const m = naive.match(/(\d{4})\D(\d{1,2})\D(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return { date: "", time: "" };
+  const pad = (n: string) => n.padStart(2, "0");
+  return {
+    date: `${m[1]}-${pad(m[2])}-${pad(m[3])}`,
+    time: `${pad(m[4])}:${m[5]}:${m[6] ?? "00"}`,
+  };
+}
+
+function joinNaive(date: string, time: string): string | null {
+  if (!date || !time) return null;
+  return `${date} ${time.length === 5 ? `${time}:00` : time}`;
 }
 
 function naiveLocalToUtcIso(naive: string | null, tzOffsetMin: number): string | null {
@@ -208,12 +223,16 @@ function ScreenshotsPage() {
         /* no exif */
       }
       const isoUtc = naiveLocalToUtcIso(naiveLocal, defaultTzMin);
+      const parts = splitNaive(naiveLocal);
       next.push({
         file,
         sha256: sha,
         dataUrl,
         exifNaiveLocal: naiveLocal,
         exifTakenAt: isoUtc,
+        captureDate: parts.date,
+        captureTime: parts.time,
+        captureDateSource: parts.date ? "EXIF" : null,
         rawExif: raw,
         tail: guessTail(file.name),
         icaoHex: "",
@@ -250,9 +269,14 @@ function ScreenshotsPage() {
       setParsed((all) =>
         all.map((x): ParsedFile => {
           if (x.sha256 !== sha) return x;
-          let naive = x.exifNaiveLocal;
           const t = statusBarTo24h(v.status_bar_time, v.status_bar_period);
-          if (!naive && t) naive = `${dateFromFile(file)} ${t}`;
+          // Date block read off the image always wins — EXIF is second, filename is never used.
+          const date = v.capture_date || x.captureDate || "";
+          const time = t || x.captureTime || "";
+          const dateSource = v.capture_date
+            ? (v.capture_date_source || "image date block")
+            : x.captureDateSource;
+          const naive = joinNaive(date, time) ?? x.exifNaiveLocal;
           const iso = naiveLocalToUtcIso(naive, x.tzOffsetMin);
           return {
             ...x,
@@ -267,10 +291,14 @@ function ScreenshotsPage() {
             notes: x.notes || (v.notes ?? ""),
             exifNaiveLocal: naive,
             exifTakenAt: iso ?? x.exifTakenAt,
+            captureDate: date,
+            captureTime: time,
+            captureDateSource: dateSource,
           };
         }),
       );
       const foundFields = [
+        v.capture_date && "date",
         v.registration && "tail",
         v.icao_hex && "ICAO",
         v.altitude_ft && "altitude",

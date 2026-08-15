@@ -18,6 +18,8 @@ import {
   listCaseDoctrine, ingestDoctrine, unlinkDoctrineFromCase,
 } from "@/lib/doctrine.functions";
 import { getCaseOsint, enrichCase, deepAdsbPull, archiveUrl } from "@/lib/osint.functions";
+import { IdentityResolver } from "@/components/IdentityResolver";
+
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
 
@@ -619,7 +621,9 @@ function VerifyTab({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-4">
+      <IdentityResolver caseId={caseId} />
       <section className="panel p-5">
+
         <div className="text-xs uppercase tracking-widest neon-text-green mb-3 flex items-center gap-2">
           <Search className="size-4" /> FAA Registry Cross-Check
         </div>

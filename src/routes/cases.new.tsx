@@ -78,7 +78,8 @@ function FleetInvestigator() {
           <Radar className="size-4" /> Fleet Cover Investigator
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Search an operator or cover-LLC (e.g. <span className="font-mono">AIR METHODS</span>, <span className="font-mono">ALF IX LLC</span>, <span className="font-mono">WINGSLEASING</span>).
+          Search an operator or cover-LLC (e.g. <span className="font-mono">AIR METHODS</span>, <span className="font-mono">ALF IX LLC</span>, <span className="font-mono">WINGSLEASING</span>),
+          or paste a tail number (<span className="font-mono">N912KC</span>) or ICAO hex (<span className="font-mono">a17501</span>).
           Review every registered tail, then promote the whole fleet to a single case with all recent detections attached.
         </p>
       </header>
@@ -88,7 +89,7 @@ function FleetInvestigator() {
           value={owner}
           onChange={(e) => setOwner(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && runQuery()}
-          placeholder="Operator / registered owner name"
+          placeholder="Operator name, tail number, or ICAO hex"
           className="flex-1 bg-input/50 border border-border rounded-sm px-2 py-1.5 text-sm font-mono focus:border-accent outline-none"
         />
         <button
@@ -102,7 +103,13 @@ function FleetInvestigator() {
       </div>
 
       {investigation.isError && (
-        <div className="text-xs text-destructive">{(investigation.error as Error)?.message}</div>
+        <div className="border border-destructive/50 bg-destructive/10 rounded-sm p-3 text-xs space-y-2">
+          <div className="uppercase tracking-widest text-destructive text-[10px]">Search failed — this is a system error, not an empty result</div>
+          <div className="font-mono text-destructive">{(investigation.error as Error)?.message}</div>
+          <button onClick={() => investigation.refetch()} className="px-2 py-1 border border-border rounded-sm hover:border-accent uppercase tracking-widest text-[10px]">
+            Retry search
+          </button>
+        </div>
       )}
 
       {data && (
@@ -122,8 +129,29 @@ function FleetInvestigator() {
           )}
 
           {data.aircraft.length === 0 ? (
-            <div className="text-xs text-muted-foreground italic">No aircraft matched. Try a shorter or alternate spelling.</div>
+            <div className="text-xs space-y-2">
+              <div className="text-muted-foreground italic">
+                No aircraft matched “{data.query}”. Try a shorter spelling, or paste a tail number / ICAO hex instead.
+              </div>
+              {(data.suggestions?.length ?? 0) > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Did you mean</div>
+                  <div className="flex flex-wrap gap-2">
+                    {data.suggestions!.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => { setOwner(s); setSelected(new Set()); setSubmitted(s); }}
+                        className="px-2 py-1 border border-border rounded-sm hover:border-accent font-mono text-[11px]"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
+
             <>
               <div className="flex items-center justify-between">
                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground">

@@ -1569,7 +1569,9 @@ export type FleetAircraft = {
 export type FleetInvestigation = {
   query: string;
   matched_owner_labels: string[];
+  suggestions?: string[];
   aircraft: FleetAircraft[];
+
   totals: {
     aircraft_count: number;
     detections_30d: number;
@@ -1585,25 +1587,58 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
     return { owner: d.owner.trim() };
   })
   .handler(async ({ data }) => {
-    const like = `%${data.owner.replace(/\s+/g, "%")}%`;
+    const raw = data.owner.trim();
+    const like = `%${raw.replace(/\s+/g, "%")}%`;
+    // Accept an N-number or a bare ICAO hex in the same box.
+    const isReg = /^n[0-9][0-9a-z]{0,4}$/i.test(raw);
+    const isHex = /^[0-9a-f]{6}$/i.test(raw);
+    const regN = isReg ? raw.replace(/^n/i, "").toUpperCase() : null;
+    const hexQ = isHex ? raw.toLowerCase() : null;
 
-    // Aircraft roster: union FAA master + aircraft_profiles + registered owner cache
+    // Aircraft roster: FAA master + FAA aircraft registry + aircraft_profiles
+    // + canonical operator profiles. Errors are NOT swallowed — a broken query
+    // must surface in the UI instead of looking like "no results".
     const roster = await q<{ icao_hex: string; registration: string | null; owner: string | null; aircraft_mfr: string | null; aircraft_model: string | null }>(
       `
       WITH candidates AS (
         SELECT lower(fm.mode_s_code_hex) AS icao_hex,
-               ('N' || fm.n_number) AS registration,
-               fm.name AS owner,
-               far.mfr_name AS aircraft_mfr,
-               far.model_name AS aircraft_model
+               COALESCE(fm.registration, 'N' || fm.n_number) AS registration,
+               COALESCE(NULLIF(trim(fm.name), ''), fm.owner) AS owner,
+               far.aircraft_manufacturer AS aircraft_mfr,
+               far.aircraft_model AS aircraft_model
         FROM faa_master fm
-        LEFT JOIN faa_aircraft_registry far ON far.code = fm.mfr_mdl_code
-        WHERE fm.name ILIKE $1 AND fm.mode_s_code_hex IS NOT NULL
+        LEFT JOIN faa_aircraft_registry far
+               ON lower(far.mode_s_code_hex) = lower(fm.mode_s_code_hex)
+        WHERE fm.mode_s_code_hex IS NOT NULL
+          AND (fm.name ILIKE $1 OR fm.owner ILIKE $1
+               OR ($2::text IS NOT NULL AND fm.n_number = $2)
+               OR ($3::text IS NOT NULL AND lower(fm.mode_s_code_hex) = $3))
         UNION
-        SELECT ap.icao_hex, ap.registration, ap.registered_owner AS owner,
+        SELECT lower(far.mode_s_code_hex) AS icao_hex,
+               'N' || far.n_number AS registration,
+               far.registrant_name AS owner,
+               far.aircraft_manufacturer, far.aircraft_model
+        FROM faa_aircraft_registry far
+        WHERE far.mode_s_code_hex IS NOT NULL
+          AND (far.registrant_name ILIKE $1
+               OR ($2::text IS NOT NULL AND far.n_number = $2)
+               OR ($3::text IS NOT NULL AND lower(far.mode_s_code_hex) = $3))
+        UNION
+        SELECT lower(ap.icao_hex), ap.registration, ap.registered_owner AS owner,
                NULL::text AS aircraft_mfr, NULL::text AS aircraft_model
         FROM aircraft_profiles ap
         WHERE ap.registered_owner ILIKE $1
+           OR ($2::text IS NOT NULL AND upper(ap.registration) = 'N' || $2)
+           OR ($3::text IS NOT NULL AND lower(ap.icao_hex) = $3)
+        UNION
+        SELECT lower(cop.icao_hex), cop.registration,
+               COALESCE(cop.operator_resolved, cop.faa_registrant_name) AS owner,
+               NULL::text, cop.aircraft_model
+        FROM canonical_operator_profiles cop
+        WHERE cop.operator_resolved ILIKE $1
+           OR cop.faa_registrant_name ILIKE $1
+           OR ($2::text IS NOT NULL AND upper(cop.registration) = 'N' || $2)
+           OR ($3::text IS NOT NULL AND lower(cop.icao_hex) = $3)
       )
       SELECT icao_hex,
              MAX(registration) AS registration,
@@ -1611,22 +1646,33 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
              MAX(aircraft_mfr) AS aircraft_mfr,
              MAX(aircraft_model) AS aircraft_model
       FROM candidates
-      WHERE icao_hex IS NOT NULL
+      WHERE icao_hex IS NOT NULL AND icao_hex <> ''
       GROUP BY icao_hex
       ORDER BY MAX(registration) NULLS LAST
       LIMIT 200
       `,
-      [like],
-    ).catch(() => [] as { icao_hex: string; registration: string | null; owner: string | null; aircraft_mfr: string | null; aircraft_model: string | null }[]);
+      [like, regN, hexQ],
+    );
 
     if (roster.length === 0) {
+      // Offer nearby owner spellings so the operator isn't left guessing.
+      const firstWord = raw.split(/\s+/)[0] ?? raw;
+      const suggestions = await q<{ owner: string; n: number }>(
+        `SELECT name AS owner, count(*)::int AS n
+           FROM faa_master
+          WHERE name ILIKE $1 AND mode_s_code_hex IS NOT NULL
+          GROUP BY name ORDER BY n DESC LIMIT 8`,
+        [`%${firstWord}%`],
+      ).catch(() => [] as { owner: string; n: number }[]);
       return {
-        query: data.owner,
+        query: raw,
         matched_owner_labels: [],
+        suggestions: suggestions.map((s) => s.owner),
         aircraft: [],
         totals: { aircraft_count: 0, detections_30d: 0, low_alt_30d: 0, anomalies_30d: 0, counties: [] },
       } satisfies FleetInvestigation;
     }
+
 
     const hexes = roster.map((r) => r.icao_hex.toLowerCase());
 
@@ -1655,7 +1701,8 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
       GROUP BY lower(d.icao_hex)
       `,
       [hexes],
-    ).catch(() => []);
+    );
+
 
     const anomalies = await q<{ icao_hex: string; n: number }>(
       `SELECT lower(icao_hex) AS icao_hex, count(*)::int AS n
@@ -1791,4 +1838,383 @@ export const promoteFleetToCase = createServerFn({ method: "POST" })
       ],
     );
     return { case_id: rows[0]?.case_id, attached: detIds.length, aircraft: hexes.length };
+  });
+
+// ============================================================
+// IDENTITY RESOLVER — turn "unknown" subjects into named airframes
+// ============================================================
+export type IdentityCandidate = {
+  source: string;
+  registration: string | null;
+  owner: string | null;
+  icao_hex: string | null;
+  detail: string;
+  confidence: number; // 0-100
+};
+
+export type IdentityResolution = {
+  case_id: string;
+  current: { icao_hex: string | null; registration: string | null; owner: string | null };
+  candidates: IdentityCandidate[];
+  best: IdentityCandidate | null;
+  flags: string[];
+};
+
+async function resolveIdentityFor(caseId: string): Promise<IdentityResolution> {
+  const rows = await q<{
+    case_id: string;
+    subject_icao: string | null;
+    subject_reg: string | null;
+    subject_owner: string | null;
+    detection_ids: string[] | null;
+  }>(
+    `SELECT case_id, subject_icao, subject_reg, subject_owner, detection_ids
+       FROM cases WHERE case_id=$1 OR id::text=$1 LIMIT 1`,
+    [caseId],
+  );
+  const c = rows[0];
+  if (!c) throw new Error("case not found");
+
+  const clean = (v: string | null | undefined) => {
+    const s = (v ?? "").trim();
+    return s && !/^(unknown|multi|n\/a|-|—)$/i.test(s) ? s : null;
+  };
+
+  let hex = clean(c.subject_icao)?.toLowerCase() ?? null;
+  const candidates: IdentityCandidate[] = [];
+  const flags: string[] = [];
+
+  // If we have no hex, try to recover one from attached detections.
+  if (!hex && c.detection_ids?.length) {
+    const d = await q<{ icao_hex: string; n: number }>(
+      `SELECT lower(icao_hex) AS icao_hex, count(*)::int AS n
+         FROM detections WHERE id = ANY($1::uuid[]) AND icao_hex IS NOT NULL
+        GROUP BY 1 ORDER BY n DESC LIMIT 1`,
+      [c.detection_ids.slice(0, 500)],
+    ).catch(() => []);
+    if (d[0]) {
+      hex = d[0].icao_hex;
+      flags.push(`ICAO hex ${hex} recovered from ${d[0].n} attached detections.`);
+    }
+  }
+  if (!hex && clean(c.subject_reg)) {
+    const regN = clean(c.subject_reg)!.replace(/^N/i, "").toUpperCase();
+    const r = await q<{ hex: string }>(
+      `SELECT lower(mode_s_code_hex) AS hex FROM faa_master WHERE n_number=$1 AND mode_s_code_hex IS NOT NULL LIMIT 1`,
+      [regN],
+    ).catch(() => []);
+    if (r[0]?.hex) {
+      hex = r[0].hex;
+      flags.push(`ICAO hex ${hex} derived from registration ${c.subject_reg}.`);
+    }
+  }
+
+  if (hex) {
+    // 1. FAA master registry
+    const fm = await q<{ n_number: string | null; name: string | null; owner: string | null; status_code: string | null }>(
+      `SELECT n_number, name, owner, status_code FROM faa_master WHERE lower(mode_s_code_hex)=lower($1) LIMIT 1`,
+      [hex],
+    ).catch(() => []);
+    if (fm[0]) {
+      candidates.push({
+        source: "FAA Master Registry",
+        registration: fm[0].n_number ? `N${fm[0].n_number}` : null,
+        owner: clean(fm[0].name) ?? clean(fm[0].owner),
+        icao_hex: hex,
+        detail: `Official FAA registration record matched on Mode-S hex${fm[0].status_code ? ` (status code ${fm[0].status_code})` : ""}.`,
+        confidence: 95,
+      });
+    }
+
+    // 2. FAA aircraft registry (secondary snapshot)
+    const far = await q<{ n_number: string | null; registrant_name: string | null; aircraft_manufacturer: string | null; aircraft_model: string | null }>(
+      `SELECT n_number, registrant_name, aircraft_manufacturer, aircraft_model
+         FROM faa_aircraft_registry WHERE lower(mode_s_code_hex)=lower($1) LIMIT 1`,
+      [hex],
+    ).catch(() => []);
+    if (far[0]) {
+      candidates.push({
+        source: "FAA Aircraft Registry",
+        registration: far[0].n_number ? `N${far[0].n_number}` : null,
+        owner: clean(far[0].registrant_name),
+        icao_hex: hex,
+        detail: `Registry snapshot: ${[far[0].aircraft_manufacturer, far[0].aircraft_model].filter(Boolean).join(" ") || "type not listed"}.`,
+        confidence: 90,
+      });
+    }
+
+    // 3. Broadcast identity: tail actually transmitted by this airframe
+    const bc = await q<{ registration: string | null; n: number; total: number }>(
+      `SELECT registration, count(*)::int AS n,
+              (SELECT count(*)::int FROM detections WHERE lower(icao_hex)=lower($1)) AS total
+         FROM detections
+        WHERE lower(icao_hex)=lower($1) AND registration IS NOT NULL AND registration <> ''
+        GROUP BY registration ORDER BY n DESC LIMIT 1`,
+      [hex],
+    ).catch(() => []);
+    if (bc[0]?.registration) {
+      const pct = bc[0].total ? Math.round((bc[0].n / bc[0].total) * 100) : 0;
+      candidates.push({
+        source: "Broadcast Tail (ADS-B)",
+        registration: bc[0].registration,
+        owner: null,
+        icao_hex: hex,
+        detail: `This airframe broadcast "${bc[0].registration}" in ${bc[0].n.toLocaleString()} of ${bc[0].total.toLocaleString()} detections (${pct}%).`,
+        confidence: Math.min(92, 55 + pct / 3),
+      });
+    }
+
+    // 4. Callsign fingerprint — repeated callsigns identify agency/military users
+    const cs = await q<{ callsign: string; n: number }>(
+      `SELECT callsign, count(*)::int AS n FROM detections
+        WHERE lower(icao_hex)=lower($1) AND callsign IS NOT NULL AND callsign <> ''
+        GROUP BY callsign ORDER BY n DESC LIMIT 3`,
+      [hex],
+    ).catch(() => []);
+    if (cs.length) {
+      const top = cs[0]!;
+      const military = /^[A-Z]{3,}[0-9]{1,3}$/.test(top.callsign) && !/^N[0-9]/.test(top.callsign);
+      candidates.push({
+        source: "Callsign Fingerprint",
+        registration: /^N[0-9]/.test(top.callsign) ? top.callsign : null,
+        owner: military ? `UNREGISTERED / STATE OPERATOR (callsign ${top.callsign})` : null,
+        icao_hex: hex,
+        detail: `Repeated callsign "${top.callsign}" on ${top.n.toLocaleString()} detections${cs.length > 1 ? ` (also ${cs.slice(1).map((x) => x.callsign).join(", ")})` : ""}. ${military ? "Pattern matches a state/military callsign, not a civil tail." : "Callsign matches a civil tail format."}`,
+        confidence: military ? 70 : 80,
+      });
+      if (military) flags.push(`Callsign "${top.callsign}" indicates a state or military operator — it will not appear in the civil FAA registry.`);
+    }
+
+    // 5. Canonical operator profile (KCSO / medical / military flags)
+    const cop = await q<{ registration: string | null; operator_resolved: string | null; faa_registrant_name: string | null; kcso_flag: boolean; military_flag: boolean; medical_flag: boolean; confidence: number | null }>(
+      `SELECT registration, operator_resolved, faa_registrant_name, kcso_flag, military_flag, medical_flag, confidence::float AS confidence
+         FROM canonical_operator_profiles
+        WHERE lower(icao_hex)=lower($1) OR lower(icao24)=lower($1) LIMIT 1`,
+      [hex],
+    ).catch(() => []);
+    if (cop[0]) {
+      const tags = [cop[0].kcso_flag ? "KCSO" : null, cop[0].military_flag ? "MILITARY" : null, cop[0].medical_flag ? "MEDICAL" : null].filter(Boolean);
+      candidates.push({
+        source: "Canonical Operator Profile",
+        registration: cop[0].registration,
+        owner: clean(cop[0].operator_resolved) ?? clean(cop[0].faa_registrant_name),
+        icao_hex: hex,
+        detail: `Watchtower operator profile${tags.length ? ` flagged ${tags.join(" / ")}` : ""}.`,
+        confidence: Math.round(cop[0].confidence != null && cop[0].confidence <= 1 ? cop[0].confidence * 100 : cop[0].confidence ?? 75),
+      });
+      if (tags.length) flags.push(`Operator profile flags: ${tags.join(", ")}.`);
+    }
+
+    // 6. Aircraft profile owner cache
+    const ap = await q<{ registration: string | null; registered_owner: string | null }>(
+      `SELECT registration, registered_owner FROM aircraft_profiles WHERE lower(icao_hex)=lower($1) LIMIT 1`,
+      [hex],
+    ).catch(() => []);
+    if (ap[0] && (clean(ap[0].registration) || clean(ap[0].registered_owner))) {
+      candidates.push({
+        source: "Aircraft Profile Cache",
+        registration: ap[0].registration,
+        owner: clean(ap[0].registered_owner),
+        icao_hex: hex,
+        detail: "Cached identity from prior Watchtower enrichment.",
+        confidence: 65,
+      });
+    }
+
+    // 7. Radar screenshot vault — tails read off forensic imagery
+    const sc = await q<{ tail: string | null; operator: string | null; n: number }>(
+      `SELECT tail, operator, count(*)::int AS n FROM radar_screenshots
+        WHERE lower(icao_hex)=lower($1) AND tail IS NOT NULL
+        GROUP BY tail, operator ORDER BY n DESC LIMIT 1`,
+      [hex],
+    ).catch(() => []);
+    if (sc[0]?.tail) {
+      candidates.push({
+        source: "Radar Screenshot Vault",
+        registration: sc[0].tail,
+        owner: clean(sc[0].operator),
+        icao_hex: hex,
+        detail: `Tail read from ${sc[0].n} hashed radar screenshot${sc[0].n === 1 ? "" : "s"} in the evidence vault.`,
+        confidence: 78,
+      });
+    }
+
+    // Hex-block heuristic for military allocations
+    if (/^ae[0-9a-f]{4}$/i.test(hex)) {
+      flags.push("Mode-S hex sits in the AE block — a US military allocation. Civil registry lookups will return nothing by design.");
+    }
+  } else {
+    flags.push("No ICAO hex on this case and none recoverable from attached evidence — identity cannot be resolved automatically.");
+  }
+
+  // Rank: prefer candidates that supply what the case is missing.
+  const needReg = !clean(c.subject_reg);
+  const needOwner = !clean(c.subject_owner);
+  const scored = [...candidates].sort((a, b) => {
+    const score = (x: IdentityCandidate) =>
+      x.confidence + (needReg && x.registration ? 12 : 0) + (needOwner && x.owner ? 12 : 0);
+    return score(b) - score(a);
+  });
+
+  return {
+    case_id: c.case_id,
+    current: { icao_hex: hex, registration: clean(c.subject_reg), owner: clean(c.subject_owner) },
+    candidates: scored,
+    best: scored.find((x) => x.registration || x.owner) ?? null,
+    flags,
+  };
+}
+
+export const resolveSubjectIdentity = createServerFn({ method: "GET" })
+  .inputValidator((d: { caseId: string }) => {
+    if (!d?.caseId) throw new Error("caseId required");
+    return d;
+  })
+  .handler(async ({ data }) => resolveIdentityFor(data.caseId));
+
+export const applySubjectIdentity = createServerFn({ method: "POST" })
+  .inputValidator((d: {
+    caseId: string;
+    registration?: string | null;
+    owner?: string | null;
+    icao_hex?: string | null;
+    source?: string | null;
+    unidentified?: boolean;
+  }) => {
+    if (!d?.caseId) throw new Error("caseId required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const stamp = new Date().toISOString();
+    if (data.unidentified) {
+      const note = `\n[IDENTITY ${stamp}] Marked GENUINELY UNIDENTIFIED after registry, broadcast, callsign and screenshot checks returned no civil identity.`;
+      await q(
+        `UPDATE cases SET subject_owner = COALESCE(NULLIF(trim(subject_owner),''), 'UNIDENTIFIED — NO CIVIL REGISTRY MATCH'),
+                          reviewer_notes = COALESCE(reviewer_notes,'') || $2,
+                          updated_at = now()
+          WHERE case_id=$1 OR id::text=$1`,
+        [data.caseId, note],
+      );
+      return { ok: true as const, applied: "UNIDENTIFIED" };
+    }
+    const reg = data.registration?.trim() || null;
+    const owner = data.owner?.trim() || null;
+    const hex = data.icao_hex?.trim().toLowerCase() || null;
+    if (!reg && !owner && !hex) throw new Error("nothing to apply");
+    const note = `\n[IDENTITY ${stamp}] Resolved via ${data.source ?? "manual entry"} → ${reg ?? "(tail unchanged)"} / ${owner ?? "(owner unchanged)"}.`;
+    await q(
+      `UPDATE cases SET
+         subject_reg   = COALESCE($2, subject_reg),
+         subject_owner = COALESCE($3, subject_owner),
+         subject_icao  = COALESCE($4, subject_icao),
+         reviewer_notes = COALESCE(reviewer_notes,'') || $5,
+         updated_at = now()
+       WHERE case_id=$1 OR id::text=$1`,
+      [data.caseId, reg, owner, hex, note],
+    );
+    return { ok: true as const, applied: [reg, owner].filter(Boolean).join(" / ") };
+  });
+
+// ---------- Unknown-subject sweep across all cases ----------
+export type UnknownCaseRow = {
+  case_id: string;
+  status: string;
+  subject_icao: string | null;
+  subject_reg: string | null;
+  subject_owner: string | null;
+  missing: string[];
+  suggested_reg: string | null;
+  suggested_owner: string | null;
+  suggested_source: string | null;
+  confidence: number;
+};
+
+export const listUnknownSubjects = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await q<{ case_id: string; status: string; subject_icao: string | null; subject_reg: string | null; subject_owner: string | null }>(
+    `SELECT case_id, status, subject_icao, subject_reg, subject_owner
+       FROM cases
+      WHERE status <> 'DISMISSED'
+        AND (NULLIF(trim(COALESCE(subject_reg,'')),'') IS NULL
+             OR NULLIF(trim(COALESCE(subject_owner,'')),'') IS NULL)
+      ORDER BY opened_at DESC NULLS LAST
+      LIMIT 60`,
+  );
+  const out: UnknownCaseRow[] = [];
+  for (const r of rows) {
+    let suggested_reg: string | null = null;
+    let suggested_owner: string | null = null;
+    let suggested_source: string | null = null;
+    let confidence = 0;
+    try {
+      const res = await resolveIdentityFor(r.case_id);
+      const regPick = res.candidates.find((c) => c.registration && !res.current.registration);
+      const ownerPick = res.candidates.find((c) => c.owner && !res.current.owner);
+      suggested_reg = regPick?.registration ?? null;
+      suggested_owner = ownerPick?.owner ?? null;
+      suggested_source = (regPick ?? ownerPick)?.source ?? null;
+      confidence = Math.max(regPick?.confidence ?? 0, ownerPick?.confidence ?? 0);
+    } catch {
+      /* leave unresolved */
+    }
+    out.push({
+      case_id: r.case_id,
+      status: r.status,
+      subject_icao: r.subject_icao,
+      subject_reg: r.subject_reg,
+      subject_owner: r.subject_owner,
+      missing: [
+        r.subject_reg?.trim() ? null : "tail",
+        r.subject_owner?.trim() ? null : "owner",
+      ].filter((x): x is string => !!x),
+      suggested_reg,
+      suggested_owner,
+      suggested_source,
+      confidence,
+    });
+  }
+  return out;
+});
+
+export const autoResolveUnknownSubjects = createServerFn({ method: "POST" })
+  .inputValidator((d?: { minConfidence?: number }) => d ?? {})
+  .handler(async ({ data }) => {
+    const min = data?.minConfidence ?? 85;
+    const rows = await q<{ case_id: string }>(
+      `SELECT case_id FROM cases
+        WHERE status <> 'DISMISSED'
+          AND (NULLIF(trim(COALESCE(subject_reg,'')),'') IS NULL
+               OR NULLIF(trim(COALESCE(subject_owner,'')),'') IS NULL)
+        ORDER BY opened_at DESC NULLS LAST LIMIT 60`,
+    );
+    let resolved = 0;
+    const details: string[] = [];
+    for (const r of rows) {
+      try {
+        const res = await resolveIdentityFor(r.case_id);
+        const regPick = res.candidates.find((c) => c.registration && c.confidence >= min && !res.current.registration);
+        const ownerPick = res.candidates.find((c) => c.owner && c.confidence >= min && !res.current.owner);
+        if (!regPick && !ownerPick) continue;
+        await q(
+          `UPDATE cases SET
+             subject_reg = COALESCE($2, subject_reg),
+             subject_owner = COALESCE($3, subject_owner),
+             subject_icao = COALESCE($4, subject_icao),
+             reviewer_notes = COALESCE(reviewer_notes,'') || $5,
+             updated_at = now()
+           WHERE case_id=$1`,
+          [
+            r.case_id,
+            regPick?.registration ?? null,
+            ownerPick?.owner ?? null,
+            res.current.icao_hex,
+            `\n[IDENTITY ${new Date().toISOString()}] Auto-resolved (≥${min}% confidence) via ${(regPick ?? ownerPick)!.source}.`,
+          ],
+        );
+        resolved++;
+        details.push(`${r.case_id} → ${regPick?.registration ?? ""} ${ownerPick?.owner ?? ""}`.trim());
+      } catch {
+        /* skip */
+      }
+    }
+    return { ok: true as const, scanned: rows.length, resolved, details };
   });

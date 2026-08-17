@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fingerprint, Loader2, Check, HelpCircle } from "lucide-react";
 import { resolveSubjectIdentity, applySubjectIdentity } from "@/lib/casework.functions";
+import { resolveByFingerprint } from "@/lib/profiler.functions";
 
 function tone(conf: number) {
   if (conf >= 85) return "neon-text-green";
@@ -91,6 +92,12 @@ export function IdentityResolver({ caseId }: { caseId: string }) {
             </div>
           )}
 
+          <FingerprintVotes
+            icao={d.current.icao_hex ?? null}
+            onUse={(owner) => apply.mutate({ owner, source: "behavioral fingerprint" })}
+            pending={apply.isPending}
+          />
+
           <div className="flex items-center gap-3 pt-2 border-t border-border/40">
             <button
               disabled={apply.isPending}
@@ -106,6 +113,54 @@ export function IdentityResolver({ caseId }: { caseId: string }) {
         </>
       )}
     </section>
+  );
+}
+
+function FingerprintVotes({
+  icao,
+  onUse,
+  pending,
+}: {
+  icao: string | null;
+  onUse: (owner: string) => void;
+  pending: boolean;
+}) {
+  const q = useQuery({
+    queryKey: ["fingerprint-votes", icao],
+    queryFn: () => resolveByFingerprint({ data: { icao: icao! } }),
+    enabled: !!icao,
+  });
+  if (!icao) return null;
+  return (
+    <div className="border border-border rounded-sm p-3 space-y-2">
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+        Behavioural fingerprint vote
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The aircraft that fly most like this one belong to these operators. Strong agreement usually means the same
+        fleet, even when the paperwork says otherwise.
+      </p>
+      {q.isLoading && <div className="text-xs text-muted-foreground inline-flex items-center gap-2"><Loader2 className="size-3 animate-spin" /> Comparing flight fingerprints…</div>}
+      {q.isError && <div className="text-xs text-destructive">{(q.error as Error)?.message}</div>}
+      {q.data?.length === 0 && <div className="text-xs text-muted-foreground italic">No behaviour profile for this airframe yet.</div>}
+      {q.data?.map((v) => (
+        <div key={v.owner} className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm truncate">{v.owner}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {v.votes} of the {v.considered} closest-flying aircraft · <span className={tone(v.confidence)}>{strength(v.confidence)} ({v.confidence}%)</span>
+            </div>
+          </div>
+          <button
+            disabled={pending}
+            onClick={() => onUse(v.owner)}
+            className="shrink-0 px-3 py-1.5 text-[10px] uppercase tracking-widest border border-accent text-accent rounded-sm disabled:opacity-40"
+          >
+            Use owner
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 

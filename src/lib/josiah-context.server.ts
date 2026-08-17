@@ -56,5 +56,41 @@ export async function gatherCaseContext(caseId: string): Promise<string> {
     [caseId],
   );
   if (!rows[0]) return "";
-  return `## Bound Case ${caseId}\n${JSON.stringify(rows[0], null, 2)}`;
+  const icao = (rows[0].subject_icao as string | null) ?? null;
+  const ml = icao ? await gatherBehaviorContext(icao) : "";
+  return `## Bound Case ${caseId}\n${JSON.stringify(rows[0], null, 2)}${ml ? `\n\n${ml}` : ""}`;
 }
+
+/** Behaviour-model layer: profile score, drift, top anomaly dimensions, behavioural twins. */
+export async function gatherBehaviorContext(icao: string): Promise<string> {
+  const prof = await neonQuery<Record<string, unknown>>(
+    `SELECT icao_hex, profile_score, drift_score, stability_score, behavioral_cluster,
+            model_version, top_anomaly_dimensions, feature_vector, updated_at
+       FROM aircraft_deep_profiles WHERE lower(icao_hex)=lower($1) LIMIT 1`,
+    [icao],
+  ).catch(() => []);
+  if (!prof[0]) return `## Behaviour Model\nNo ML behaviour profile exists for ${icao}. Do not invent one.`;
+
+  const twins = await neonQuery<{ icao_hex: string; similarity: number; owner: string | null; registration: string | null }>(
+    `WITH me AS (SELECT embedding_vector FROM aircraft_deep_profiles WHERE lower(icao_hex)=lower($1) LIMIT 1)
+     SELECT d.icao_hex,
+            (1 - (d.embedding_vector <=> (SELECT embedding_vector FROM me)))::float AS similarity,
+            cop.registration, COALESCE(cop.operator_resolved, cop.faa_registrant_name) AS owner
+       FROM aircraft_deep_profiles d
+       LEFT JOIN LATERAL (SELECT * FROM canonical_operator_profiles t WHERE lower(t.icao_hex)=lower(d.icao_hex) LIMIT 1) cop ON true
+      WHERE lower(d.icao_hex) <> lower($1) AND d.embedding_vector IS NOT NULL
+      ORDER BY d.embedding_vector <=> (SELECT embedding_vector FROM me)
+      LIMIT 6`,
+    [icao],
+  ).catch(() => []);
+
+  return [
+    "## Behaviour Model (ML profiler)",
+    JSON.stringify(prof[0], null, 2),
+    "### Behavioural twins (same flight signature, may be fleet/handoff partners)",
+    twins.length
+      ? twins.map((t) => `- ${t.registration ?? t.icao_hex} (${t.owner ?? "owner unknown"}): ${Math.round(t.similarity * 100)}% match`).join("\n")
+      : "- none",
+  ].join("\n\n");
+}
+

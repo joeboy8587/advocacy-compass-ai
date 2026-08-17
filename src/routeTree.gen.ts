@@ -15,6 +15,7 @@ import { Route as ScreenshotsRouteImport } from './routes/screenshots'
 import { Route as RegulationsRouteImport } from './routes/regulations'
 import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as NarrativeRouteImport } from './routes/narrative'
+import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as IntelRouteImport } from './routes/intel'
 import { Route as DoctrineRouteImport } from './routes/doctrine'
 import { Route as DetectionsRouteImport } from './routes/detections'
@@ -55,6 +56,11 @@ const OperatorsRoute = OperatorsRouteImport.update({
 const NarrativeRoute = NarrativeRouteImport.update({
   id: '/narrative',
   path: '/narrative',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeadsRoute = LeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IntelRoute = IntelRouteImport.update({
@@ -121,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
+  '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
+  '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
   '/intel': typeof IntelRoute
+  '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
   '/regulations': typeof RegulationsRoute
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/detections'
     | '/doctrine'
     | '/intel'
+    | '/leads'
     | '/narrative'
     | '/operators'
     | '/regulations'
@@ -200,6 +210,7 @@ export interface FileRouteTypes {
     | '/detections'
     | '/doctrine'
     | '/intel'
+    | '/leads'
     | '/narrative'
     | '/operators'
     | '/regulations'
@@ -219,6 +230,7 @@ export interface FileRouteTypes {
     | '/detections'
     | '/doctrine'
     | '/intel'
+    | '/leads'
     | '/narrative'
     | '/operators'
     | '/regulations'
@@ -239,6 +251,7 @@ export interface RootRouteChildren {
   DetectionsRoute: typeof DetectionsRoute
   DoctrineRoute: typeof DoctrineRoute
   IntelRoute: typeof IntelRoute
+  LeadsRoute: typeof LeadsRoute
   NarrativeRoute: typeof NarrativeRoute
   OperatorsRoute: typeof OperatorsRoute
   RegulationsRoute: typeof RegulationsRoute
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       path: '/narrative'
       fullPath: '/narrative'
       preLoaderRoute: typeof NarrativeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leads': {
+      id: '/leads'
+      path: '/leads'
+      fullPath: '/leads'
+      preLoaderRoute: typeof LeadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/intel': {
@@ -393,6 +413,7 @@ const rootRouteChildren: RootRouteChildren = {
   DetectionsRoute: DetectionsRoute,
   DoctrineRoute: DoctrineRoute,
   IntelRoute: IntelRoute,
+  LeadsRoute: LeadsRoute,
   NarrativeRoute: NarrativeRoute,
   OperatorsRoute: OperatorsRoute,
   RegulationsRoute: RegulationsRoute,

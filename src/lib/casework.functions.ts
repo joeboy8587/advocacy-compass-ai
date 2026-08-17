@@ -1624,11 +1624,11 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
                OR ($2::text IS NOT NULL AND far.n_number = $2)
                OR ($3::text IS NOT NULL AND lower(far.mode_s_code_hex) = $3))
         UNION
-        SELECT lower(ap.icao_hex), ap.registration, ap.registered_owner AS owner,
-               NULL::text AS aircraft_mfr, NULL::text AS aircraft_model
+        SELECT lower(ap.icao_hex), ap.observed_registration AS registration, ap.registered_owner AS owner,
+               NULL::text AS aircraft_mfr, ap.aircraft_model AS aircraft_model
         FROM aircraft_profiles ap
         WHERE ap.registered_owner ILIKE $1
-           OR ($2::text IS NOT NULL AND upper(ap.registration) = 'N' || $2)
+           OR ($2::text IS NOT NULL AND upper(ap.observed_registration) = 'N' || $2)
            OR ($3::text IS NOT NULL AND lower(ap.icao_hex) = $3)
         UNION
         SELECT lower(cop.icao_hex), cop.registration,
@@ -2007,7 +2007,7 @@ async function resolveIdentityFor(caseId: string): Promise<IdentityResolution> {
 
     // 6. Aircraft profile owner cache
     const ap = await q<{ registration: string | null; registered_owner: string | null }>(
-      `SELECT registration, registered_owner FROM aircraft_profiles WHERE lower(icao_hex)=lower($1) LIMIT 1`,
+      `SELECT observed_registration AS registration, registered_owner FROM aircraft_profiles WHERE lower(icao_hex)=lower($1) LIMIT 1`,
       [hex],
     ).catch(() => []);
     if (ap[0] && (clean(ap[0].registration) || clean(ap[0].registered_owner))) {

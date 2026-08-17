@@ -100,7 +100,7 @@ export function BehaviorProfile({ icao }: { icao: string | null }) {
                       <div className="h-1.5 flex-1 bg-border/40 rounded-sm overflow-hidden">
                         <div className="h-full bg-accent" style={{ width: `${Math.min(100, Math.round(t.weight * 100))}%` }} />
                       </div>
-                      <span className="text-[11px] font-mono w-10 text-right">{Math.round(t.weight * 100)}%</span>
+                      <span className="text-[11px] font-mono w-10 text-right">{Math.min(100, Math.round(t.weight * 100))}%</span>
                     </div>
                   ))}
                 </div>

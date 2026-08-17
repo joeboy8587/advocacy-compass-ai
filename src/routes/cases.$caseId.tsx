@@ -19,6 +19,7 @@ import {
 } from "@/lib/doctrine.functions";
 import { getCaseOsint, enrichCase, deepAdsbPull, archiveUrl } from "@/lib/osint.functions";
 import { IdentityResolver } from "@/components/IdentityResolver";
+import { BehaviorProfile } from "@/components/BehaviorProfile";
 
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
@@ -371,7 +372,8 @@ function InvestigateTab({ c, caseId }: { c: { subject_icao: string | null; subje
 
   return (
     <div className="space-y-4">
-      {/* DOSSIER */}
+      <BehaviorProfile icao={icao} />
+
       <section className="panel scanline p-5">
         <div className="text-xs uppercase tracking-widest neon-text-orange mb-3 flex items-center gap-2">
           <User className="size-4" /> Subject Dossier

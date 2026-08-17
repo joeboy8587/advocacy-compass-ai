@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Users, Search, Shield, Heart, Plane, Briefcase } from "lucide-react";
 import { getOperators, lookupRegistry } from "@/lib/watchtower.functions";
+import { OperatorNetworkPanel } from "@/components/OperatorNetworkPanel";
 
 export const Route = createFileRoute("/operators")({
   head: () => ({ meta: [{ title: "Operators // Watchtower" }] }),
@@ -30,6 +31,7 @@ function OperatorsPage() {
 
   return (
     <div className="p-6 space-y-4">
+      <OperatorNetworkPanel search={search} />
       <header>
         <h1 className="text-2xl neon-text-orange flex items-center gap-2">
           <Users className="size-6" /> Operators &amp; FAA Registry

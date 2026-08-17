@@ -23,6 +23,7 @@ import {
 import { Stat, fmt } from "@/components/cmd/Stat";
 import { Link } from "@tanstack/react-router";
 import { LoadErrorPanel } from "@/components/LoadErrorPanel";
+import { ModelHealthStrip } from "@/components/ModelHealthStrip";
 
 const kpisOpts = queryOptions({
   queryKey: ["kpis"],
@@ -77,6 +78,8 @@ function Command() {
       </header>
 
       <PipelineHealth k={k} />
+
+      <ModelHealthStrip />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

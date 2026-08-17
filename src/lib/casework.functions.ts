@@ -1685,20 +1685,31 @@ export const getFleetInvestigation = createServerFn({ method: "GET" })
       last_seen: string | null;
     }>(
       `
-      SELECT lower(d.icao_hex) AS icao_hex,
-             count(*)::int AS detections_30d,
-             sum(CASE WHEN d.is_91_227_violator THEN 1 ELSE 0 END)::int AS low_alt_30d,
-             (SELECT county FROM detections d2
-              WHERE lower(d2.icao_hex) = lower(d.icao_hex)
-                AND d2.captured_at > now() - interval '30 days'
-                AND d2.county IS NOT NULL
-              GROUP BY county ORDER BY count(*) DESC LIMIT 1) AS top_county,
-             MIN(d.captured_at) AS first_seen,
-             MAX(d.captured_at) AS last_seen
-      FROM detections d
-      WHERE lower(d.icao_hex) = ANY($1::text[])
-        AND d.captured_at > now() - interval '30 days'
-      GROUP BY lower(d.icao_hex)
+      WITH base AS (
+        SELECT lower(d.icao_hex) AS icao_hex,
+               count(*)::int AS detections_30d,
+               sum(CASE WHEN d.is_91_227_violator THEN 1 ELSE 0 END)::int AS low_alt_30d,
+               MIN(d.captured_at) AS first_seen,
+               MAX(d.captured_at) AS last_seen
+        FROM detections d
+        WHERE lower(d.icao_hex) = ANY($1::text[])
+          AND d.captured_at > now() - interval '30 days'
+        GROUP BY lower(d.icao_hex)
+      ),
+      counties AS (
+        SELECT DISTINCT ON (hex) hex, county FROM (
+          SELECT lower(d2.icao_hex) AS hex, d2.county, count(*) AS n
+          FROM detections d2
+          WHERE lower(d2.icao_hex) = ANY($1::text[])
+            AND d2.captured_at > now() - interval '30 days'
+            AND d2.county IS NOT NULL
+          GROUP BY 1, 2
+        ) t ORDER BY hex, n DESC
+      )
+      SELECT b.icao_hex, b.detections_30d, b.low_alt_30d,
+             c.county AS top_county, b.first_seen, b.last_seen
+      FROM base b LEFT JOIN counties c ON c.hex = b.icao_hex
+      
       `,
       [hexes],
     );

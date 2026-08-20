@@ -49,6 +49,8 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
       const rows = await q<Kpis>(`
         WITH
           ml_max AS (SELECT MAX(detected_at) AS t FROM ml_anomaly_detections),
+          ae_max AS (SELECT MAX(detected_at) AS t FROM anomaly_events),
+          ens_max AS (SELECT MAX(scored_at) AS t FROM ensemble_anomaly_scores),
           vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
           inc_max AS (SELECT MAX(event_timestamp) AS t FROM incursion_events),
           det_max AS (SELECT MAX(captured_at) AS t FROM detections)

@@ -102,7 +102,22 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
 
 
 
-// ---------- Spoofing analysis ----------
+// ---------- Spoofing analysis (live table: anomaly_events) ----------
+// The legacy ml_anomaly_detections feed stopped writing 2026-07-20. anomaly_events
+// is the live writer and carries the same families under related labels, so each
+// family is matched as a group instead of a single exact string.
+export const SPOOF_LABELS = [
+  "SPOOFING_SIGNAL",
+  "CROSS_FEED_INCONSISTENCY_SPOOFING",
+  "HEX_CASE_SPOOF",
+  "HEX_CASE_SPOOF_INJECTION",
+  "GNSS_INS_SPOOFING_INNOVATION_SPIKE",
+] as const;
+export const MASK_LABELS = ["MASKED_ALTITUDE", "SUSTAINED_MASKING", "GHOST_VECTOR_UNMASKED"] as const;
+export const PHYSICS_LABELS = ["IMPOSSIBLE_PHYSICS", "KINEMATIC_ANOMALY", "SUB_STALL"] as const;
+const ALL_SPOOF_FAMILY = [...SPOOF_LABELS, ...MASK_LABELS, ...PHYSICS_LABELS];
+const sqlList = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(",");
+
 export type SpoofEvent = {
   id: string;
   detected_at: string;
@@ -121,15 +136,22 @@ export const getSpoofingFeed = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const limit = Math.min(data.limit ?? 60, 200);
     const params: unknown[] = [limit];
-    let where = `anomaly_type IN ('SPOOFING_SIGNAL','MASKED_ALTITUDE','IMPOSSIBLE_PHYSICS','SURVEILLANCE_MASKING')`;
+    let where = `anomaly_type IN (${sqlList(ALL_SPOOF_FAMILY)})`;
     if (data.type) {
       params.push(data.type);
       where = `anomaly_type = $${params.length}`;
     }
     return q<SpoofEvent>(
-      `SELECT id, detected_at, aircraft_registration, icao24, callsign, anomaly_type,
-              anomaly_score, confidence_level, county, features::text AS features
-         FROM ml_anomaly_detections
+      `SELECT id::text AS id, detected_at,
+              registration AS aircraft_registration,
+              icao_hex AS icao24,
+              NULL::text AS callsign,
+              anomaly_type,
+              anomaly_score::text AS anomaly_score,
+              status AS confidence_level,
+              county,
+              reasoning AS features
+         FROM anomaly_events
         WHERE ${where}
         ORDER BY detected_at DESC NULLS LAST
         LIMIT $1`,
@@ -139,13 +161,14 @@ export const getSpoofingFeed = createServerFn({ method: "GET" })
 
 export const getSpoofingBreakdown = createServerFn({ method: "GET" }).handler(async () => {
   return q<{ anomaly_type: string; n: number; avg_score: string; aircraft: number }>(`
+    WITH ae_max AS (SELECT MAX(detected_at) AS t FROM anomaly_events)
     SELECT anomaly_type,
            count(*)::int AS n,
            ROUND(AVG(anomaly_score)::numeric, 2)::text AS avg_score,
-           count(DISTINCT icao24)::int AS aircraft
-      FROM ml_anomaly_detections
-     WHERE detected_at > now() - interval '7 days'
-       AND anomaly_type IN ('SPOOFING_SIGNAL','MASKED_ALTITUDE','IMPOSSIBLE_PHYSICS','SURVEILLANCE_MASKING','CALIBRATION_ERROR')
+           count(DISTINCT icao_hex)::int AS aircraft
+      FROM anomaly_events
+     WHERE detected_at > (SELECT t FROM ae_max) - interval '7 days'
+       AND anomaly_type IN (${sqlList(ALL_SPOOF_FAMILY)})
      GROUP BY anomaly_type
      ORDER BY n DESC
   `);
@@ -160,20 +183,62 @@ export const getTopSpoofers = createServerFn({ method: "GET" }).handler(async ()
     masked_events: number;
     last_seen: string;
   }>(`
-    SELECT aircraft_registration,
-           icao24,
+    WITH ae_max AS (SELECT MAX(detected_at) AS t FROM anomaly_events)
+    SELECT MAX(registration) AS aircraft_registration,
+           icao_hex AS icao24,
            MAX(county) AS county,
-           count(*) FILTER (WHERE anomaly_type = 'SPOOFING_SIGNAL')::int AS spoof_events,
-           count(*) FILTER (WHERE anomaly_type = 'MASKED_ALTITUDE')::int AS masked_events,
+           count(*) FILTER (WHERE anomaly_type IN (${sqlList(SPOOF_LABELS)}))::int AS spoof_events,
+           count(*) FILTER (WHERE anomaly_type IN (${sqlList(MASK_LABELS)}))::int AS masked_events,
            MAX(detected_at) AS last_seen
-      FROM ml_anomaly_detections
-     WHERE detected_at > now() - interval '30 days'
-       AND anomaly_type IN ('SPOOFING_SIGNAL','MASKED_ALTITUDE')
-     GROUP BY aircraft_registration, icao24
+      FROM anomaly_events
+     WHERE detected_at > (SELECT t FROM ae_max) - interval '30 days'
+       AND anomaly_type IN (${sqlList([...SPOOF_LABELS, ...MASK_LABELS])})
+     GROUP BY icao_hex
      ORDER BY spoof_events DESC, masked_events DESC
      LIMIT 25
   `);
 });
+
+// ---------- Ensemble ML scoring (live: ensemble_anomaly_scores) ----------
+export type EnsembleRow = {
+  id: string;
+  icao_hex: string | null;
+  registration: string | null;
+  county: string | null;
+  altitude_ft: number | null;
+  speed_kts: string | null;
+  captured_at: string | null;
+  scored_at: string;
+  ensemble_score: string | null;
+  disagreement: string | null;
+  explanation: string | null;
+  validated: boolean | null;
+};
+
+export const getEnsembleTriage = createServerFn({ method: "GET" })
+  .inputValidator((d: { limit?: number; onlyDisagreement?: boolean } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const limit = Math.min(data.limit ?? 40, 200);
+    return q<EnsembleRow>(
+      `WITH ens_max AS (SELECT MAX(scored_at) AS t FROM ensemble_anomaly_scores),
+            recent AS (
+              SELECT * FROM ensemble_anomaly_scores
+               WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours'
+                 ${data.onlyDisagreement ? "AND disagreement >= 0.3" : ""}
+               ORDER BY ensemble_score DESC NULLS LAST, scored_at DESC
+               LIMIT $1
+            )
+       SELECT id::text AS id, icao_hex, registration, county, altitude_ft,
+              speed_kts::text AS speed_kts, captured_at, scored_at,
+              ROUND(ensemble_score::numeric, 3)::text AS ensemble_score,
+              ROUND(disagreement::numeric, 3)::text AS disagreement,
+              explanation, validated
+         FROM recent
+        ORDER BY ensemble_score DESC NULLS LAST, scored_at DESC`,
+      [limit],
+    );
+  });
+
 
 // ---------- Coordination / Handoffs ----------
 export type CoordinationLock = {

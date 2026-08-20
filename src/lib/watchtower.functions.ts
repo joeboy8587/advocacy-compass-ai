@@ -75,7 +75,12 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
           EXTRACT(EPOCH FROM (now() - (SELECT t FROM ae_max))) / 3600 AS ml_anomaly_age_hours,
           EXTRACT(EPOCH FROM (now() - (SELECT t FROM ml_max))) / 3600 AS legacy_ml_age_hours,
           EXTRACT(EPOCH FROM (now() - (SELECT t FROM ens_max))) / 3600 AS ensemble_age_hours,
-
+          EXTRACT(EPOCH FROM (now() - (SELECT t FROM vc_max))) / 3600 AS violations_age_hours,
+          EXTRACT(EPOCH FROM (now() - (SELECT t FROM inc_max))) / 3600 AS incursions_age_hours,
+          EXTRACT(EPOCH FROM (now() - (SELECT t FROM det_max))) / 3600 AS detections_age_hours,
+          24 AS spoofing_window_hours,
+          7 AS violations_window_days,
+          7 AS incursions_window_days
       `);
       return rows[0];
     } catch (error) {

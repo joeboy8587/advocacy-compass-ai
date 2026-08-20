@@ -19,8 +19,14 @@ export type Kpis = {
   impossible_physics_24h: number;
   coordination_locks: number;
   incursions_7d: number;
+  ensemble_scored_24h: number;
+  ensemble_high_24h: number;
+  ensemble_disagree_24h: number;
+  ensemble_unvalidated_24h: number;
   // Pipeline freshness — hours since latest record. Dashboard renders stale badges from these.
   ml_anomaly_age_hours: number | null;
+  legacy_ml_age_hours: number | null;
+  ensemble_age_hours: number | null;
   violations_age_hours: number | null;
   incursions_age_hours: number | null;
   detections_age_hours: number | null;

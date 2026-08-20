@@ -41,3 +41,7 @@ The strip already warns the profiles are 154 hours old. It gains the profile win
 - New `getEnsembleTriage` server function (score-ordered, indexed on `scored_at`, LIMIT-first CTE) plus a tile group in `src/routes/index.tsx` and a triage list.
 - `ModelHealthStrip` reads `window_start`/`window_end` from `aircraft_deep_profiles`.
 - No schema changes and no writes — read-path corrections only.
+
+## Note on detections
+
+`detections` is the live ADS-B feed and stays the source of truth for the detection tiles, the 24h timeline and low-altitude counts. `ensemble_anomaly_scores` joins to it by `detection_id`, so ensemble scoring surfaces as an ML layer over the same live rows — no second detection source is introduced.

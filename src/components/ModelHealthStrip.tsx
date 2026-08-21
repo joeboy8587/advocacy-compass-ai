@@ -27,10 +27,14 @@ export function ModelHealthStrip() {
           <Brain className="size-4" /> Behaviour Model
         </div>
         <p className={`text-sm mt-1 ${d.stale ? "text-destructive" : "text-muted-foreground"}`}>{d.status_label}</p>
+        <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
+          Fingerprints describe {fmtDay(d.profile_window_start)} → {fmtDay(d.profile_window_end)} · not a live score
+        </p>
       </div>
       <div className="flex gap-4 text-xs shrink-0">
         <Metric label="Aircraft profiled" value={d.aircraft_profiled.toLocaleString()} />
         <Metric label="Elevated (65+)" value={d.elevated_aircraft.toLocaleString()} tone="neon-text-orange" />
+        <Metric label="Profile window" value={`${fmtDay(d.profile_window_start)}–${fmtDay(d.profile_window_end)}`} />
         <Metric label="Version" value={d.last_run?.model_version ?? "—"} />
         <Link
           to="/leads"
@@ -41,6 +45,13 @@ export function ModelHealthStrip() {
       </div>
     </section>
   );
+}
+
+function fmtDay(ts: string | null | undefined) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "—";
+  return d.toISOString().slice(0, 10);
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {

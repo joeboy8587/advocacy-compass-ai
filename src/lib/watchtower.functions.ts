@@ -59,7 +59,22 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
           ens_max AS (SELECT MAX(scored_at) AS t FROM ensemble_anomaly_scores),
           vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
           inc_max AS (SELECT MAX(event_timestamp) AS t FROM incursion_events),
-          det_max AS (SELECT MAX(captured_at) AS t FROM detections)
+          det_max AS (SELECT MAX(captured_at) AS t FROM detections),
+          ens_agg AS (
+            SELECT count(*)::int AS n,
+                   count(*) FILTER (WHERE ensemble_score >= 0.65)::int AS hi,
+                   count(*) FILTER (WHERE disagreement >= 0.3)::int AS dis,
+                   count(*) FILTER (WHERE validated IS NOT TRUE)::int AS unv
+              FROM ensemble_anomaly_scores
+             WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours'
+          ),
+          ae_agg AS (
+            SELECT count(*) FILTER (WHERE anomaly_type IN ('SPOOFING_SIGNAL','CROSS_FEED_INCONSISTENCY_SPOOFING','HEX_CASE_SPOOF','HEX_CASE_SPOOF_INJECTION','GNSS_INS_SPOOFING_INNOVATION_SPIKE'))::int AS spoof,
+                   count(*) FILTER (WHERE anomaly_type IN ('MASKED_ALTITUDE','SUSTAINED_MASKING','GHOST_VECTOR_UNMASKED'))::int AS masked,
+                   count(*) FILTER (WHERE anomaly_type IN ('IMPOSSIBLE_PHYSICS','KINEMATIC_ANOMALY','SUB_STALL'))::int AS physics
+              FROM anomaly_events
+             WHERE detected_at > (SELECT t FROM ae_max) - interval '24 hours'
+          )
         SELECT
           (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS detections_24h,
           (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,
@@ -69,15 +84,15 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
           (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
           (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS unique_aircraft_24h,
           (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h,
-          (SELECT count(*)::int FROM anomaly_events WHERE detected_at > (SELECT t FROM ae_max) - interval '24 hours' AND anomaly_type IN ('SPOOFING_SIGNAL','CROSS_FEED_INCONSISTENCY_SPOOFING','HEX_CASE_SPOOF','HEX_CASE_SPOOF_INJECTION','GNSS_INS_SPOOFING_INNOVATION_SPIKE')) AS spoofing_24h,
-          (SELECT count(*)::int FROM anomaly_events WHERE detected_at > (SELECT t FROM ae_max) - interval '24 hours' AND anomaly_type IN ('MASKED_ALTITUDE','SUSTAINED_MASKING','GHOST_VECTOR_UNMASKED')) AS masked_alt_24h,
-          (SELECT count(*)::int FROM anomaly_events WHERE detected_at > (SELECT t FROM ae_max) - interval '24 hours' AND anomaly_type IN ('IMPOSSIBLE_PHYSICS','KINEMATIC_ANOMALY','SUB_STALL')) AS impossible_physics_24h,
+          (SELECT spoof FROM ae_agg) AS spoofing_24h,
+          (SELECT masked FROM ae_agg) AS masked_alt_24h,
+          (SELECT physics FROM ae_agg) AS impossible_physics_24h,
           (SELECT count(*)::int FROM wtpr_convergent_locks WHERE machine_confirmed = true) AS coordination_locks,
           (SELECT count(*)::int FROM incursion_events WHERE event_timestamp > (SELECT t FROM inc_max) - interval '7 days') AS incursions_7d,
-          (SELECT count(*)::int FROM ensemble_anomaly_scores WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours') AS ensemble_scored_24h,
-          (SELECT count(*)::int FROM ensemble_anomaly_scores WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours' AND ensemble_score >= 0.65) AS ensemble_high_24h,
-          (SELECT count(*)::int FROM ensemble_anomaly_scores WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours' AND disagreement >= 0.3) AS ensemble_disagree_24h,
-          (SELECT count(*)::int FROM ensemble_anomaly_scores WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours' AND validated IS NOT TRUE) AS ensemble_unvalidated_24h,
+          (SELECT n FROM ens_agg) AS ensemble_scored_24h,
+          (SELECT hi FROM ens_agg) AS ensemble_high_24h,
+          (SELECT dis FROM ens_agg) AS ensemble_disagree_24h,
+          (SELECT unv FROM ens_agg) AS ensemble_unvalidated_24h,
           EXTRACT(EPOCH FROM (now() - (SELECT t FROM ae_max))) / 3600 AS ml_anomaly_age_hours,
           EXTRACT(EPOCH FROM (now() - (SELECT t FROM ml_max))) / 3600 AS legacy_ml_age_hours,
           EXTRACT(EPOCH FROM (now() - (SELECT t FROM ens_max))) / 3600 AS ensemble_age_hours,

@@ -261,11 +261,101 @@ function freshHint(ageHours: number | null | undefined): string {
   return `${(h / 24).toFixed(1)}d stale`;
 }
 
+function EnsembleSection({
+  k,
+}: {
+  k: {
+    ensemble_scored_24h: number;
+    ensemble_high_24h: number;
+    ensemble_disagree_24h: number;
+    ensemble_unvalidated_24h: number;
+    ensemble_age_hours: number | null;
+  };
+}) {
+  const [open, setOpen] = useState(false);
+  const [onlyDisagreement, setOnlyDisagreement] = useState(false);
+  const triage = useQuery({
+    queryKey: ["ensemble-triage", onlyDisagreement],
+    queryFn: () => getEnsembleTriage({ data: { limit: 40, onlyDisagreement } }),
+    enabled: open,
+    refetchInterval: 120_000,
+  });
+
+  return (
+    <section className="panel scanline p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-widest neon-text-green flex items-center gap-2">
+          <Brain className="size-4" /> Ensemble ML Scoring
+          <span className="text-muted-foreground normal-case tracking-normal">
+            · {freshHint(k.ensemble_age_hours)}
+          </span>
+        </div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="px-3 py-1.5 text-[10px] uppercase tracking-widest border border-accent text-accent rounded-sm"
+        >
+          {open ? "Hide triage" : "Open triage"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label="Scored 24h" value={fmt(k.ensemble_scored_24h)} icon={Activity} tone="cyan" hint="detections run through the ensemble" />
+        <Stat label="High score" value={fmt(k.ensemble_high_24h)} icon={ShieldAlert} tone="orange" hint="score ≥ 0.65" />
+        <Stat label="Models disagree" value={fmt(k.ensemble_disagree_24h)} icon={Network} tone="magenta" hint="worth a human look" />
+        <Stat label="Unvalidated" value={fmt(k.ensemble_unvalidated_24h)} icon={FolderOpen} tone="green" hint="not yet reviewed" />
+      </div>
+
+      {open && (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={onlyDisagreement}
+              onChange={(e) => setOnlyDisagreement(e.target.checked)}
+            />
+            Only show where models disagree
+          </label>
+          {triage.isLoading && <Skel />}
+          {triage.isError && <LoadError label="Ensemble triage" />}
+          {triage.data?.length === 0 && <Empty msg="Nothing scored in this window." />}
+          <div className="divide-y divide-border max-h-[420px] overflow-auto">
+            {triage.data?.map((r) => (
+              <div key={r.id} className="py-2 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-bold neon-text-green truncate">
+                    {r.registration || r.icao_hex || "UNKNOWN"}
+                    {r.altitude_ft != null && (
+                      <span className="text-muted-foreground font-normal ml-2">@ {r.altitude_ft.toLocaleString()}ft</span>
+                    )}
+                    {r.county && <span className="text-muted-foreground font-normal ml-2">· {r.county}</span>}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 tabular-nums">
+                    <span className="neon-text-orange">score {r.ensemble_score ?? "—"}</span>
+                    <span className="text-muted-foreground">disagree {r.disagreement ?? "—"}</span>
+                    {!r.validated && (
+                      <span className="text-[10px] uppercase tracking-widest border border-accent/40 text-accent px-2 py-0.5 rounded-sm">
+                        unvalidated
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {r.explanation && <div className="text-muted-foreground mt-1">{r.explanation}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function PipelineHealth({
   k,
 }: {
   k: {
     ml_anomaly_age_hours: number | null;
+    legacy_ml_age_hours: number | null;
+    ensemble_age_hours: number | null;
     violations_age_hours: number | null;
     incursions_age_hours: number | null;
     detections_age_hours: number | null;
@@ -273,9 +363,11 @@ function PipelineHealth({
 }) {
   const rows = [
     { label: "Detections (live ADS-B)", age: Number(k.detections_age_hours), warnAfter: 1 },
-    { label: "ML Anomaly Brain", age: Number(k.ml_anomaly_age_hours), warnAfter: 6 },
+    { label: "Anomaly Feed (live)", age: Number(k.ml_anomaly_age_hours), warnAfter: 6 },
+    { label: "Ensemble ML Scoring", age: Number(k.ensemble_age_hours), warnAfter: 6 },
     { label: "Violation Classifier", age: Number(k.violations_age_hours), warnAfter: 24 },
     { label: "Incursion Detector", age: Number(k.incursions_age_hours), warnAfter: 24 },
+    { label: "Legacy anomaly feed (retired)", age: Number(k.legacy_ml_age_hours), warnAfter: Infinity },
   ];
   const anyStale = rows.some((r) => r.age > r.warnAfter);
   return (

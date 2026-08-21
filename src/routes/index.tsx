@@ -13,12 +13,13 @@ function ClientClock() {
   }, []);
   return <div suppressHydrationWarning>{now || "\u00a0"}</div>;
 }
-import { Activity, AlertTriangle, FolderOpen, Plane, Radar, Siren, TrendingDown, Users, ShieldAlert, Network } from "lucide-react";
+import { Activity, AlertTriangle, FolderOpen, Plane, Radar, Siren, TrendingDown, Users, ShieldAlert, Network, Brain } from "lucide-react";
 import {
   getKpis,
   getRecentAlerts,
   getHourlyTimeline,
   getTopOffenders,
+  getEnsembleTriage,
 } from "@/lib/watchtower.functions";
 import { Stat, fmt } from "@/components/cmd/Stat";
 import { Link } from "@tanstack/react-router";
@@ -384,7 +385,7 @@ function PipelineHealth({
           )}
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px]">
         {rows.map((r) => {
           const stale = r.age > r.warnAfter;
           return (

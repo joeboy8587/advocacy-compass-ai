@@ -96,9 +96,9 @@ function Command() {
         <Stat label="Low Altitude (<500ft)" value={fmt(k.low_alt_24h)} icon={TrendingDown} tone="magenta" hint="Under 500ft AGL, airborne" />
         <Stat label="Convergences" value={fmt(k.convergences_24h)} icon={Users} tone="green" />
         <Stat label="FAA Violations 7d" value={fmt(k.violations_7d)} icon={AlertTriangle} tone="orange" hint={`violation_classifications · ${freshHint(k.violations_age_hours)}`} />
-        <Stat label="Spoofing 24h" value={fmt(k.spoofing_24h)} icon={ShieldAlert} tone="orange" hint={`SPOOFING_SIGNAL · ${freshHint(k.ml_anomaly_age_hours)}`} />
-        <Stat label="Masked Altitude 24h" value={fmt(k.masked_alt_24h)} icon={ShieldAlert} tone="magenta" hint={`MASKED_ALTITUDE · ${freshHint(k.ml_anomaly_age_hours)}`} />
-        <Stat label="Impossible Physics 24h" value={fmt(k.impossible_physics_24h)} icon={ShieldAlert} tone="orange" hint={freshHint(k.ml_anomaly_age_hours)} />
+        <Stat label="Spoofing 24h" value={fmt(k.spoofing_24h)} icon={ShieldAlert} tone="orange" hint={`spoof + cross-feed + hex-case + GNSS/INS · ${freshHint(k.ml_anomaly_age_hours)}`} />
+        <Stat label="Masked Altitude 24h" value={fmt(k.masked_alt_24h)} icon={ShieldAlert} tone="magenta" hint={`masked + sustained masking + ghost vector · ${freshHint(k.ml_anomaly_age_hours)}`} />
+        <Stat label="Impossible Physics 24h" value={fmt(k.impossible_physics_24h)} icon={ShieldAlert} tone="orange" hint={`impossible physics + kinematic + sub-stall · ${freshHint(k.ml_anomaly_age_hours)}`} />
         <Stat label="Coordination Locks" value={fmt(k.coordination_locks)} icon={Network} tone="green" hint="wtpr_convergent_locks confirmed" />
         <Stat label="Incursions 7d" value={fmt(k.incursions_7d)} icon={TrendingDown} tone="orange" hint={`floor breaks · ${freshHint(k.incursions_age_hours)}`} />
         <Stat label="Active Cases" value={fmt(k.active_cases)} icon={FolderOpen} tone="green" />

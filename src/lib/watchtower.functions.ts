@@ -59,7 +59,22 @@ export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
           ens_max AS (SELECT MAX(scored_at) AS t FROM ensemble_anomaly_scores),
           vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
           inc_max AS (SELECT MAX(event_timestamp) AS t FROM incursion_events),
-          det_max AS (SELECT MAX(captured_at) AS t FROM detections)
+          det_max AS (SELECT MAX(captured_at) AS t FROM detections),
+          ens_agg AS (
+            SELECT count(*)::int AS n,
+                   count(*) FILTER (WHERE ensemble_score >= 0.65)::int AS hi,
+                   count(*) FILTER (WHERE disagreement >= 0.3)::int AS dis,
+                   count(*) FILTER (WHERE validated IS NOT TRUE)::int AS unv
+              FROM ensemble_anomaly_scores
+             WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours'
+          ),
+          ae_agg AS (
+            SELECT count(*) FILTER (WHERE anomaly_type IN ('SPOOFING_SIGNAL','CROSS_FEED_INCONSISTENCY_SPOOFING','HEX_CASE_SPOOF','HEX_CASE_SPOOF_INJECTION','GNSS_INS_SPOOFING_INNOVATION_SPIKE'))::int AS spoof,
+                   count(*) FILTER (WHERE anomaly_type IN ('MASKED_ALTITUDE','SUSTAINED_MASKING','GHOST_VECTOR_UNMASKED'))::int AS masked,
+                   count(*) FILTER (WHERE anomaly_type IN ('IMPOSSIBLE_PHYSICS','KINEMATIC_ANOMALY','SUB_STALL'))::int AS physics
+              FROM anomaly_events
+             WHERE detected_at > (SELECT t FROM ae_max) - interval '24 hours'
+          )
         SELECT
           (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS detections_24h,
           (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,

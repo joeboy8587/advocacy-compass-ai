@@ -47,6 +47,13 @@ export function ModelHealthStrip() {
   );
 }
 
+function fmtDay(ts: string | null | undefined) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "—";
+  return d.toISOString().slice(0, 10);
+}
+
 function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>

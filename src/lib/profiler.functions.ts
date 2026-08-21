@@ -339,6 +339,8 @@ export const getModelHealth = createServerFn({ method: "GET" }).handler(async ()
     runs,
     aircraft_profiled: profiled[0]?.n ?? 0,
     elevated_aircraft: profiled[0]?.scored ?? 0,
+    profile_window_start: profiled[0]?.win_start ?? null,
+    profile_window_end: profiled[0]?.win_end ?? null,
     hours_since_run: ageH == null ? null : Math.round(ageH),
     stale: ageH != null && ageH > 48,
     status_label: !last

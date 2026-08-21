@@ -104,6 +104,9 @@ function Command() {
         <Stat label="Active Cases" value={fmt(k.active_cases)} icon={FolderOpen} tone="green" />
       </div>
 
+      <EnsembleSection k={k} />
+
+
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Live Alerts Feed */}

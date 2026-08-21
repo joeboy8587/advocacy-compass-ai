@@ -325,8 +325,12 @@ export const getModelHealth = createServerFn({ method: "GET" }).handler(async ()
     `SELECT run_type, model_version, aircraft_count, mean_profile_score, max_profile_score, run_at
        FROM profiler_run_log ORDER BY run_at DESC LIMIT 10`,
   );
-  const profiled = await q<{ n: number; scored: number }>(
-    `SELECT count(*)::int AS n, count(*) FILTER (WHERE profile_score >= 65)::int AS scored FROM aircraft_deep_profiles`,
+  const profiled = await q<{ n: number; scored: number; win_start: string | null; win_end: string | null }>(
+    `SELECT count(*)::int AS n,
+            count(*) FILTER (WHERE profile_score >= 65)::int AS scored,
+            MIN(window_start)::text AS win_start,
+            MAX(window_end)::text AS win_end
+       FROM aircraft_deep_profiles`,
   );
   const last = runs[0];
   const ageH = last ? (Date.now() - new Date(last.run_at).getTime()) / 3.6e6 : null;

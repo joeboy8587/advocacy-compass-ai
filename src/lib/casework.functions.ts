@@ -1314,7 +1314,7 @@ export const getDuplicateGroups = createServerFn({ method: "GET" }).handler(asyn
             subject_reg, subject_icao, subject_owner, primary_county,
             total_events, opened_at, auto_summary
      FROM cases
-     WHERE status <> 'DISMISSED'
+     WHERE status NOT IN ('DISMISSED','MERGED')
      ORDER BY wti_score DESC NULLS LAST, opened_at DESC`,
   );
 
@@ -1479,18 +1479,19 @@ export const mergeDuplicateCases = createServerFn({ method: "POST" })
     await repoint(`UPDATE osint_findings      SET case_id = $1 WHERE case_id = ANY($2::text[])`);
     await repoint(`UPDATE osint_adsb_pulls    SET case_id = $1 WHERE case_id = ANY($2::text[])`);
 
-    // 3) Mark absorbed cases DISMISSED with pointer
-    const dupNote = `[${today}] Consolidated into ${data.primary_case_id} (same-operator merge).`;
+    // 3) Mark absorbed cases MERGED (NOT dismissed) with pointer
+    const dupNote = `[${today}] Rolled into ${data.primary_case_id} (same-operator consolidation). Evidence remains ACTIVE under the primary case.`;
     await q(
       `UPDATE cases
-         SET status           = 'DISMISSED',
-             dismissed_reason = 'MERGED',
+         SET status           = 'MERGED',
+             dismissed_reason = NULL,
              reviewer_notes   = COALESCE(reviewer_notes || E'\n', '') || $2,
              updated_at       = now()
        WHERE (case_id = ANY($1::text[]) OR id::text = ANY($1::text[]))
          AND case_id <> $3`,
       [dupIds, dupNote, data.primary_case_id],
     );
+
 
     return {
       ok: true,
@@ -1523,7 +1524,7 @@ export const consolidateCluster = createServerFn({ method: "POST" })
       `SELECT case_id, wti_score::text, total_events, status
          FROM cases
         WHERE case_id = ANY($1::text[])
-          AND status <> 'DISMISSED'`,
+          AND status NOT IN ('DISMISSED','MERGED')`,
       [data.case_ids],
     );
     if (rows.length < 2) return { ok: false as const, error: "fewer than 2 active cases in cluster" };
@@ -2144,7 +2145,7 @@ export const listUnknownSubjects = createServerFn({ method: "GET" }).handler(asy
   const rows = await q<{ case_id: string; status: string; subject_icao: string | null; subject_reg: string | null; subject_owner: string | null }>(
     `SELECT case_id, status, subject_icao, subject_reg, subject_owner
        FROM cases
-      WHERE status <> 'DISMISSED'
+      WHERE status NOT IN ('DISMISSED','MERGED')
         AND (NULLIF(trim(COALESCE(subject_reg,'')),'') IS NULL
              OR NULLIF(trim(COALESCE(subject_owner,'')),'') IS NULL)
       ORDER BY opened_at DESC NULLS LAST
@@ -2192,7 +2193,7 @@ export const autoResolveUnknownSubjects = createServerFn({ method: "POST" })
     const min = data?.minConfidence ?? 85;
     const rows = await q<{ case_id: string }>(
       `SELECT case_id FROM cases
-        WHERE status <> 'DISMISSED'
+        WHERE status NOT IN ('DISMISSED','MERGED')
           AND (NULLIF(trim(COALESCE(subject_reg,'')),'') IS NULL
                OR NULLIF(trim(COALESCE(subject_owner,'')),'') IS NULL)
         ORDER BY opened_at DESC NULLS LAST LIMIT 60`,

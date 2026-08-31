@@ -29,7 +29,7 @@ export const Route = createFileRoute("/cases/$caseId")({
   component: CaseDetail,
 });
 
-const STATUSES = ["DRAFT", "REVIEW", "CONFIRMED", "PUBLISHED", "DISMISSED"] as const;
+const STATUSES = ["DRAFT", "REVIEW", "CONFIRMED", "PUBLISHED", "MERGED", "DISMISSED"] as const;
 type Status = (typeof STATUSES)[number];
 type Tab = "overview" | "investigate" | "osint" | "verify" | "triage";
 

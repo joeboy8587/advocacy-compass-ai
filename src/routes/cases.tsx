@@ -10,7 +10,7 @@ import { ExportBar } from "@/components/ExportBar";
 
 
 const search = z.object({
-  status: z.enum(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "DISMISSED"]).optional().default("ALL"),
+  status: z.enum(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "MERGED", "DISMISSED"]).optional().default("ALL"),
 });
 
 export const Route = createFileRoute("/cases")({
@@ -51,7 +51,7 @@ function CasesIndex() {
             className="inline-flex items-center gap-1 px-3 py-1.5 text-[10px] uppercase tracking-widest border border-accent text-accent rounded-sm hover:bg-accent/10">
             <Plus className="size-3" /> New Case
           </Link>
-          {(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "DISMISSED"] as const).map((s) => (
+          {(["ALL", "DRAFT", "REVIEW", "PUBLISHED", "MERGED", "DISMISSED"] as const).map((s) => (
             <button
               key={s}
               onClick={() => nav({ search: { status: s } })}
@@ -105,9 +105,11 @@ function CasesIndex() {
                 <div className={`text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-sm border inline-block ${
                   c.status === "PUBLISHED" ? "border-accent text-accent" :
                   c.status === "REVIEW" ? "border-primary text-primary" :
+                  c.status === "MERGED" ? "border-accent/60 text-accent/80" :
                   c.status === "DISMISSED" ? "border-destructive text-destructive" :
                   "border-muted-foreground text-muted-foreground"
-                }`}>{c.status}</div>
+                }`}>{c.status === "MERGED" ? "Merged — evidence active" : c.status}</div>
+
                 {c.human_reviewed && (
                   <div className="mt-1 text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-sm border border-primary text-primary inline-block">
                     {c.completed_at ? "✔ File complete" : "✔ Reviewed"}
@@ -261,7 +263,7 @@ function DuplicatesPanel() {
                     <button
                       disabled={consolidate.isPending}
                       onClick={() => {
-                        if (confirm(`Consolidate all ${g.cases.length} cases for ${g.label} into ONE case file? Absorbed cases will be marked DISMISSED (MERGED).`)) {
+                        if (confirm(`Consolidate all ${g.cases.length} cases for ${g.label} into ONE case file? Absorbed cases will be marked MERGED (evidence stays active under the primary case).`)) {
                           consolidate.mutate({ case_ids: allIds });
                         }
                       }}

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Users, Search, Shield, Heart, Plane, Briefcase } from "lucide-react";
 import { getOperators, lookupRegistry } from "@/lib/watchtower.functions";
 import { OperatorNetworkPanel } from "@/components/OperatorNetworkPanel";
+import { ShellNetworkPanel } from "@/components/ShellNetworkPanel";
+
 
 export const Route = createFileRoute("/operators")({
   head: () => ({ meta: [{ title: "Operators // Watchtower" }] }),

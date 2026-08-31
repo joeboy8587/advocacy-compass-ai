@@ -105,9 +105,11 @@ function CasesIndex() {
                 <div className={`text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-sm border inline-block ${
                   c.status === "PUBLISHED" ? "border-accent text-accent" :
                   c.status === "REVIEW" ? "border-primary text-primary" :
+                  c.status === "MERGED" ? "border-accent/60 text-accent/80" :
                   c.status === "DISMISSED" ? "border-destructive text-destructive" :
                   "border-muted-foreground text-muted-foreground"
-                }`}>{c.status}</div>
+                }`}>{c.status === "MERGED" ? "Merged — evidence active" : c.status}</div>
+
                 {c.human_reviewed && (
                   <div className="mt-1 text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-sm border border-primary text-primary inline-block">
                     {c.completed_at ? "✔ File complete" : "✔ Reviewed"}

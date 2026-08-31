@@ -227,6 +227,7 @@
   .panel { border: 1px solid #999 !important; break-inside: avoid; }
   * { color: #000 !important; text-shadow: none !important; animation: none !important; }
   .scanline::before, .scanline::after { display: none !important; }
+  input, select, textarea, button { background: #fff !important; border-color: #999 !important; }
   a[href]::after { content: ""; }
   @page { margin: 12mm; }
 }

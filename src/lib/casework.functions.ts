@@ -1479,18 +1479,19 @@ export const mergeDuplicateCases = createServerFn({ method: "POST" })
     await repoint(`UPDATE osint_findings      SET case_id = $1 WHERE case_id = ANY($2::text[])`);
     await repoint(`UPDATE osint_adsb_pulls    SET case_id = $1 WHERE case_id = ANY($2::text[])`);
 
-    // 3) Mark absorbed cases DISMISSED with pointer
-    const dupNote = `[${today}] Consolidated into ${data.primary_case_id} (same-operator merge).`;
+    // 3) Mark absorbed cases MERGED (NOT dismissed) with pointer
+    const dupNote = `[${today}] Rolled into ${data.primary_case_id} (same-operator consolidation). Evidence remains ACTIVE under the primary case.`;
     await q(
       `UPDATE cases
-         SET status           = 'DISMISSED',
-             dismissed_reason = 'MERGED',
+         SET status           = 'MERGED',
+             dismissed_reason = NULL,
              reviewer_notes   = COALESCE(reviewer_notes || E'\n', '') || $2,
              updated_at       = now()
        WHERE (case_id = ANY($1::text[]) OR id::text = ANY($1::text[]))
          AND case_id <> $3`,
       [dupIds, dupNote, data.primary_case_id],
     );
+
 
     return {
       ok: true,

@@ -20,6 +20,7 @@ import { Route as IntelRouteImport } from './routes/intel'
 import { Route as DoctrineRouteImport } from './routes/doctrine'
 import { Route as DetectionsRouteImport } from './routes/detections'
 import { Route as CoordinationRouteImport } from './routes/coordination'
+import { Route as ClustersRouteImport } from './routes/clusters'
 import { Route as CasesRouteImport } from './routes/cases'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
@@ -83,6 +84,11 @@ const CoordinationRoute = CoordinationRouteImport.update({
   path: '/coordination',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ClustersRoute = ClustersRouteImport.update({
+  id: '/clusters',
+  path: '/clusters',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CasesRoute = CasesRouteImport.update({
   id: '/cases',
   path: '/cases',
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/cases': typeof CasesRouteWithChildren
+  '/clusters': typeof ClustersRoute
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/cases': typeof CasesRouteWithChildren
+  '/clusters': typeof ClustersRoute
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
@@ -164,6 +172,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/cases': typeof CasesRouteWithChildren
+  '/clusters': typeof ClustersRoute
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
@@ -186,6 +195,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/cases'
+    | '/clusters'
     | '/coordination'
     | '/detections'
     | '/doctrine'
@@ -206,6 +216,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/cases'
+    | '/clusters'
     | '/coordination'
     | '/detections'
     | '/doctrine'
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/cases'
+    | '/clusters'
     | '/coordination'
     | '/detections'
     | '/doctrine'
@@ -247,6 +259,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
   CasesRoute: typeof CasesRouteWithChildren
+  ClustersRoute: typeof ClustersRoute
   CoordinationRoute: typeof CoordinationRoute
   DetectionsRoute: typeof DetectionsRoute
   DoctrineRoute: typeof DoctrineRoute
@@ -341,6 +354,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoordinationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clusters': {
+      id: '/clusters'
+      path: '/clusters'
+      fullPath: '/clusters'
+      preLoaderRoute: typeof ClustersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cases': {
       id: '/cases'
       path: '/cases'
@@ -409,6 +429,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
   CasesRoute: CasesRouteWithChildren,
+  ClustersRoute: ClustersRoute,
   CoordinationRoute: CoordinationRoute,
   DetectionsRoute: DetectionsRoute,
   DoctrineRoute: DoctrineRoute,

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { getCases } from "@/lib/watchtower.functions";
 import { getSuggestedCases, createCase, getDuplicateGroups, mergeDuplicateCases, consolidateCluster, listUnknownSubjects, autoResolveUnknownSubjects } from "@/lib/casework.functions";
 import { z } from "zod";
+import { ExportBar } from "@/components/ExportBar";
 
 
 

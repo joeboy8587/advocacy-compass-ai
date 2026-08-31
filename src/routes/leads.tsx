@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Brain, Loader2, Check, FolderPlus } from "lucide-react";
 import { getMlLeadQueue, reviewMlLead } from "@/lib/profiler.functions";
 import { LoadErrorPanel } from "@/components/LoadErrorPanel";
+import { ExportBar } from "@/components/ExportBar";
 
 export const Route = createFileRoute("/leads")({
   head: () => ({

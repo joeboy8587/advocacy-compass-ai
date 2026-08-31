@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Radio } from "lucide-react";
 import { getRecentDetections } from "@/lib/watchtower.functions";
 import { z } from "zod";
+import { ExportBar } from "@/components/ExportBar";
 
 const search = z.object({
   lowAlt: z.boolean().optional().default(false),

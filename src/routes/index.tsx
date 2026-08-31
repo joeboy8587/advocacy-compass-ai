@@ -25,6 +25,10 @@ import { Stat, fmt } from "@/components/cmd/Stat";
 import { Link } from "@tanstack/react-router";
 import { LoadErrorPanel } from "@/components/LoadErrorPanel";
 import { ModelHealthStrip } from "@/components/ModelHealthStrip";
+import { MlOpsPanel } from "@/components/MlOpsPanel";
+import { DriftWatch } from "@/components/DriftWatch";
+import { ThreatDigest } from "@/components/ThreatDigest";
+
 
 const kpisOpts = queryOptions({
   queryKey: ["kpis"],

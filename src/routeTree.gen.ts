@@ -13,6 +13,7 @@ import { Route as ViolationsRouteImport } from './routes/violations'
 import { Route as SpoofingRouteImport } from './routes/spoofing'
 import { Route as ScreenshotsRouteImport } from './routes/screenshots'
 import { Route as RegulationsRouteImport } from './routes/regulations'
+import { Route as PatternsRouteImport } from './routes/patterns'
 import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as NarrativeRouteImport } from './routes/narrative'
 import { Route as LeadsRouteImport } from './routes/leads'
@@ -47,6 +48,11 @@ const ScreenshotsRoute = ScreenshotsRouteImport.update({
 const RegulationsRoute = RegulationsRouteImport.update({
   id: '/regulations',
   path: '/regulations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PatternsRoute = PatternsRouteImport.update({
+  id: '/patterns',
+  path: '/patterns',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OperatorsRoute = OperatorsRouteImport.update({
@@ -137,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
+  '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
+  '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
+  '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
@@ -203,6 +212,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/narrative'
     | '/operators'
+    | '/patterns'
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
@@ -224,6 +234,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/narrative'
     | '/operators'
+    | '/patterns'
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
@@ -245,6 +256,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/narrative'
     | '/operators'
+    | '/patterns'
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
@@ -267,6 +279,7 @@ export interface RootRouteChildren {
   LeadsRoute: typeof LeadsRoute
   NarrativeRoute: typeof NarrativeRoute
   OperatorsRoute: typeof OperatorsRoute
+  PatternsRoute: typeof PatternsRoute
   RegulationsRoute: typeof RegulationsRoute
   ScreenshotsRoute: typeof ScreenshotsRoute
   SpoofingRoute: typeof SpoofingRoute
@@ -303,6 +316,13 @@ declare module '@tanstack/react-router' {
       path: '/regulations'
       fullPath: '/regulations'
       preLoaderRoute: typeof RegulationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/patterns': {
+      id: '/patterns'
+      path: '/patterns'
+      fullPath: '/patterns'
+      preLoaderRoute: typeof PatternsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/operators': {
@@ -437,6 +457,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeadsRoute: LeadsRoute,
   NarrativeRoute: NarrativeRoute,
   OperatorsRoute: OperatorsRoute,
+  PatternsRoute: PatternsRoute,
   RegulationsRoute: RegulationsRoute,
   ScreenshotsRoute: ScreenshotsRoute,
   SpoofingRoute: SpoofingRoute,

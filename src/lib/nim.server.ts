@@ -23,29 +23,39 @@ export function hasNim(): boolean {
 }
 
 async function nimCall(messages: NimMsg[], model: string, useTools: boolean): Promise<NimMsg> {
-  const res = await fetch(NIM_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.NVIDIA_NIM_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.35,
-      max_tokens: 3000,
-      ...(useTools ? { tools: JOSIAH_TOOLS } : {}),
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`NVIDIA NIM ${res.status}: ${body.slice(0, 400)}`);
+  let lastErr = "";
+  // NIM occasionally returns a transient 500/429 — retry with short backoff.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(NIM_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.NVIDIA_NIM_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.35,
+        max_tokens: 3000,
+        ...(useTools ? { tools: JOSIAH_TOOLS } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      lastErr = `NVIDIA NIM ${res.status}: ${body.slice(0, 300)}`;
+      if (res.status === 429 || res.status >= 500) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        continue;
+      }
+      throw new Error(lastErr);
+    }
+    const j = (await res.json()) as NimResponse;
+    if (j.error?.message) throw new Error(`NVIDIA NIM: ${j.error.message}`);
+    const msg = j.choices?.[0]?.message;
+    if (!msg) throw new Error("NVIDIA NIM returned no choices");
+    return msg;
   }
-  const j = (await res.json()) as NimResponse;
-  if (j.error?.message) throw new Error(`NVIDIA NIM: ${j.error.message}`);
-  const msg = j.choices?.[0]?.message;
-  if (!msg) throw new Error("NVIDIA NIM returned no choices");
-  return msg;
+  throw new Error(lastErr || "NVIDIA NIM unavailable");
 }
 
 /**

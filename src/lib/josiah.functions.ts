@@ -188,11 +188,15 @@ export const sendJosiahMessage = createServerFn({ method: "POST" })
     ]);
     history.reverse();
 
-    const { gatherContext, gatherCaseContext } = await import("./josiah-context.server");
-    const [context, caseCtx] = await Promise.all([
+    const { gatherContext, gatherCaseContext, gatherEvidenceContext, gatherLegalExposure } =
+      await import("./josiah-context.server");
+    const [context, caseCtx, evidenceCtx, legalCtx] = await Promise.all([
       gatherContext(),
       thread.case_id ? gatherCaseContext(thread.case_id) : Promise.resolve(""),
+      gatherEvidenceContext(data.question).catch(() => ""),
+      gatherLegalExposure().catch(() => ""),
     ]);
+
 
     let osint = "";
     if (thread.case_id) {

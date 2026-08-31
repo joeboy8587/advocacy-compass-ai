@@ -151,8 +151,8 @@ export const sendJosiahMessage = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
-    if (!process.env.LOVABLE_API_KEY && !process.env.OPENAI_API_KEY) {
-      throw new Error("No AI key configured (LOVABLE_API_KEY or OPENAI_API_KEY)");
+    if (!process.env.NVIDIA_NIM_API_KEY && !process.env.LOVABLE_API_KEY && !process.env.OPENAI_API_KEY) {
+      throw new Error("No AI key configured (NVIDIA_NIM_API_KEY, LOVABLE_API_KEY or OPENAI_API_KEY)");
     }
     const { neonQuery } = await import("./neon.server");
     const { selectMode, systemFor } = await import("./josiah-prompts");

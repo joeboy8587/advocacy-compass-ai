@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Users, Search, Shield, Heart, Plane, Briefcase } from "lucide-react";
@@ -43,6 +44,7 @@ function OperatorsPage() {
         <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">
           17,712 canonical operator profiles · cross-referenced to FAA N-number registry
         </p>
+        <ExportBar rows={ops.data as unknown as Array<Record<string, unknown>>} fileName="operators" note="csv = rows shown · print = full page" />
       </header>
 
       {/* FAA Registry Lookup */}

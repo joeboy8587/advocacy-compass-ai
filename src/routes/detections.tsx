@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Radio } from "lucide-react";
 import { getRecentDetections } from "@/lib/watchtower.functions";
 import { z } from "zod";
+import { ExportBar } from "@/components/ExportBar";
 
 const search = z.object({
   lowAlt: z.boolean().optional().default(false),
@@ -42,6 +43,7 @@ function Detections() {
         >
           91.227 Violators only
         </button>
+        <ExportBar rows={q.data as unknown as Array<Record<string, unknown>>} fileName="detections" note="csv = rows shown · print = full page" />
       </header>
 
       <div className="panel scanline overflow-hidden">

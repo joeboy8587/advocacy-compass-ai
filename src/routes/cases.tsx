@@ -5,6 +5,7 @@ import { useState } from "react";
 import { getCases } from "@/lib/watchtower.functions";
 import { getSuggestedCases, createCase, getDuplicateGroups, mergeDuplicateCases, consolidateCluster, listUnknownSubjects, autoResolveUnknownSubjects } from "@/lib/casework.functions";
 import { z } from "zod";
+import { ExportBar } from "@/components/ExportBar";
 
 
 
@@ -64,6 +65,7 @@ function CasesIndex() {
             </button>
           ))}
         </div>
+        <ExportBar rows={q.data as unknown as Array<Record<string, unknown>>} fileName="cases" note="csv = rows shown · print = full page" />
       </header>
 
       <SuggestedPanel />

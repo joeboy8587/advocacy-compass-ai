@@ -217,3 +217,17 @@
 @utility blink {
   animation: blink 1.2s steps(1) infinite;
 }
+
+/* ---- Print / Save-as-PDF: strip chrome, force legible ink on paper ---- */
+@media print {
+  .no-print { display: none !important; }
+  aside, nav, header.app-header { display: none !important; }
+  html, body { background: #fff !important; color: #000 !important; }
+  main, .panel { background: #fff !important; box-shadow: none !important; }
+  .panel { border: 1px solid #999 !important; break-inside: avoid; }
+  * { color: #000 !important; text-shadow: none !important; animation: none !important; }
+  .scanline::before, .scanline::after { display: none !important; }
+  input, select, textarea, button { background: #fff !important; border-color: #999 !important; }
+  a[href]::after { content: ""; }
+  @page { margin: 12mm; }
+}

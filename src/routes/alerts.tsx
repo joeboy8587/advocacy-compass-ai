@@ -4,6 +4,7 @@ import { Siren, Download, Search, X } from "lucide-react";
 import { getRecentAlerts, getAlertCounties } from "@/lib/watchtower.functions";
 import { z } from "zod";
 import { useMemo, useState, useEffect } from "react";
+import { ExportBar } from "@/components/ExportBar";
 
 const search = z.object({
   level: z.enum(["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional().default("ALL"),
@@ -156,6 +157,7 @@ function Alerts() {
             <Download className="size-3" /> CSV ({rows.length})
           </button>
         </div>
+        <ExportBar rows={rows as unknown as Array<Record<string, unknown>>} fileName="alerts" note="csv = rows shown · print = full page" />
       </header>
 
       <div className="panel scanline overflow-x-auto">

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Boxes, Loader2, ChevronDown, ChevronRight } from "lucide-react";
@@ -41,6 +42,7 @@ function ClustersPage() {
           The model puts every profiled aircraft into a group of airframes that fly the same way. A group is not an
           accusation — it is a starting point. Open a group to see who is in it and what makes it unusual.
         </p>
+        <ExportBar rows={q.data?.clusters as unknown as Array<Record<string, unknown>>} fileName="behaviour-clusters" note="csv = rows shown · print = full page" />
       </header>
 
       {q.isLoading && (

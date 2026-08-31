@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { GitBranch, Network, Brain, AlertTriangle } from "lucide-react";
 import {
@@ -51,6 +52,7 @@ function CoordinationPage() {
           <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">
             wtpr_convergent_locks · mission_hypotheses · incursion_events
           </p>
+          <ExportBar rows={locks.data as unknown as Array<Record<string, unknown>>} fileName="coordination-locks" note="csv = rows shown · print = full page" />
         </header>
 
         {/* Hypothesis tile row */}

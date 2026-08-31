@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { AlertTriangle, Search, Building2, MapPin } from "lucide-react";
@@ -33,6 +34,7 @@ function ViolationsPage() {
         <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">
           Classified violations with operator + registry lookup // {list.data?.length ?? 0} shown
         </p>
+        <ExportBar rows={list.data as unknown as Array<Record<string, unknown>>} fileName="faa-violations" note="csv = rows shown · print = full page" />
       </header>
 
       {/* Rule breakdown */}

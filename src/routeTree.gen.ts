@@ -13,6 +13,7 @@ import { Route as ViolationsRouteImport } from './routes/violations'
 import { Route as SpoofingRouteImport } from './routes/spoofing'
 import { Route as ScreenshotsRouteImport } from './routes/screenshots'
 import { Route as RegulationsRouteImport } from './routes/regulations'
+import { Route as PatternsRouteImport } from './routes/patterns'
 import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as NarrativeRouteImport } from './routes/narrative'
 import { Route as LeadsRouteImport } from './routes/leads'
@@ -20,6 +21,7 @@ import { Route as IntelRouteImport } from './routes/intel'
 import { Route as DoctrineRouteImport } from './routes/doctrine'
 import { Route as DetectionsRouteImport } from './routes/detections'
 import { Route as CoordinationRouteImport } from './routes/coordination'
+import { Route as ClustersRouteImport } from './routes/clusters'
 import { Route as CasesRouteImport } from './routes/cases'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
@@ -46,6 +48,11 @@ const ScreenshotsRoute = ScreenshotsRouteImport.update({
 const RegulationsRoute = RegulationsRouteImport.update({
   id: '/regulations',
   path: '/regulations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PatternsRoute = PatternsRouteImport.update({
+  id: '/patterns',
+  path: '/patterns',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OperatorsRoute = OperatorsRouteImport.update({
@@ -81,6 +88,11 @@ const DetectionsRoute = DetectionsRouteImport.update({
 const CoordinationRoute = CoordinationRouteImport.update({
   id: '/coordination',
   path: '/coordination',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClustersRoute = ClustersRouteImport.update({
+  id: '/clusters',
+  path: '/clusters',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CasesRoute = CasesRouteImport.update({
@@ -123,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/cases': typeof CasesRouteWithChildren
+  '/clusters': typeof ClustersRoute
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
@@ -130,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
+  '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
@@ -143,6 +157,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/cases': typeof CasesRouteWithChildren
+  '/clusters': typeof ClustersRoute
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
@@ -150,6 +165,7 @@ export interface FileRoutesByTo {
   '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
+  '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
@@ -164,6 +180,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/cases': typeof CasesRouteWithChildren
+  '/clusters': typeof ClustersRoute
   '/coordination': typeof CoordinationRoute
   '/detections': typeof DetectionsRoute
   '/doctrine': typeof DoctrineRoute
@@ -171,6 +188,7 @@ export interface FileRoutesById {
   '/leads': typeof LeadsRoute
   '/narrative': typeof NarrativeRoute
   '/operators': typeof OperatorsRoute
+  '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
@@ -186,6 +204,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/cases'
+    | '/clusters'
     | '/coordination'
     | '/detections'
     | '/doctrine'
@@ -193,6 +212,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/narrative'
     | '/operators'
+    | '/patterns'
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
@@ -206,6 +226,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/cases'
+    | '/clusters'
     | '/coordination'
     | '/detections'
     | '/doctrine'
@@ -213,6 +234,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/narrative'
     | '/operators'
+    | '/patterns'
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
@@ -226,6 +248,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/cases'
+    | '/clusters'
     | '/coordination'
     | '/detections'
     | '/doctrine'
@@ -233,6 +256,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/narrative'
     | '/operators'
+    | '/patterns'
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
@@ -247,6 +271,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
   CasesRoute: typeof CasesRouteWithChildren
+  ClustersRoute: typeof ClustersRoute
   CoordinationRoute: typeof CoordinationRoute
   DetectionsRoute: typeof DetectionsRoute
   DoctrineRoute: typeof DoctrineRoute
@@ -254,6 +279,7 @@ export interface RootRouteChildren {
   LeadsRoute: typeof LeadsRoute
   NarrativeRoute: typeof NarrativeRoute
   OperatorsRoute: typeof OperatorsRoute
+  PatternsRoute: typeof PatternsRoute
   RegulationsRoute: typeof RegulationsRoute
   ScreenshotsRoute: typeof ScreenshotsRoute
   SpoofingRoute: typeof SpoofingRoute
@@ -290,6 +316,13 @@ declare module '@tanstack/react-router' {
       path: '/regulations'
       fullPath: '/regulations'
       preLoaderRoute: typeof RegulationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/patterns': {
+      id: '/patterns'
+      path: '/patterns'
+      fullPath: '/patterns'
+      preLoaderRoute: typeof PatternsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/operators': {
@@ -339,6 +372,13 @@ declare module '@tanstack/react-router' {
       path: '/coordination'
       fullPath: '/coordination'
       preLoaderRoute: typeof CoordinationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clusters': {
+      id: '/clusters'
+      path: '/clusters'
+      fullPath: '/clusters'
+      preLoaderRoute: typeof ClustersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cases': {
@@ -409,6 +449,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
   CasesRoute: CasesRouteWithChildren,
+  ClustersRoute: ClustersRoute,
   CoordinationRoute: CoordinationRoute,
   DetectionsRoute: DetectionsRoute,
   DoctrineRoute: DoctrineRoute,
@@ -416,6 +457,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeadsRoute: LeadsRoute,
   NarrativeRoute: NarrativeRoute,
   OperatorsRoute: OperatorsRoute,
+  PatternsRoute: PatternsRoute,
   RegulationsRoute: RegulationsRoute,
   ScreenshotsRoute: ScreenshotsRoute,
   SpoofingRoute: SpoofingRoute,

@@ -25,6 +25,10 @@ import { Stat, fmt } from "@/components/cmd/Stat";
 import { Link } from "@tanstack/react-router";
 import { LoadErrorPanel } from "@/components/LoadErrorPanel";
 import { ModelHealthStrip } from "@/components/ModelHealthStrip";
+import { MlOpsPanel } from "@/components/MlOpsPanel";
+import { DriftWatch } from "@/components/DriftWatch";
+import { ThreatDigest } from "@/components/ThreatDigest";
+
 
 const kpisOpts = queryOptions({
   queryKey: ["kpis"],
@@ -82,7 +86,9 @@ function Command() {
 
       <ModelHealthStrip />
 
-      {/* KPIs */}
+      <MlOpsPanel />
+
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Detections 24h" value={fmt(k.detections_24h)} icon={Radar} tone="green" hint={freshHint(k.detections_age_hours)} />
         <Stat label="Unique Aircraft" value={fmt(k.unique_aircraft_24h)} icon={Plane} tone="cyan" />
@@ -106,6 +112,13 @@ function Command() {
       </div>
 
       <EnsembleSection k={k} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <DriftWatch />
+        <ThreatDigest />
+      </div>
+
+
 
 
 

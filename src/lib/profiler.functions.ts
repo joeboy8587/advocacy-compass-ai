@@ -369,3 +369,161 @@ export const getOperatorGnn = createServerFn({ method: "GET" })
     );
     return rows;
   });
+
+// ============================================================
+// BEHAVIOUR CLUSTERS — plain-English grouping of the fleet
+// ============================================================
+export type ClusterRow = {
+  behavioral_cluster: number;
+  aircraft: number;
+  avg_score: number | null;
+  avg_drift: number | null;
+  avg_stability: number | null;
+  updated_at: string | null;
+  headline: string;
+  meaning: string;
+};
+
+function clusterMeaning(score: number | null, drift: number | null, size: number) {
+  const s = score ?? 0;
+  const d = drift ?? 0;
+  const parts: string[] = [];
+  if (s >= 90) parts.push("These aircraft fly almost nothing like the general fleet baseline.");
+  else if (s >= 65) parts.push("These aircraft sit clearly outside the normal pattern.");
+  else if (s >= 40) parts.push("Mildly unusual — worth a periodic look.");
+  else parts.push("Behaves close to the ordinary civil baseline.");
+  if (d >= 20) parts.push("The group's flying pattern is shifting fast between model runs.");
+  else if (d >= 8) parts.push("The pattern is slowly moving.");
+  else parts.push("The pattern is stable run to run.");
+  parts.push(`${size.toLocaleString()} aircraft share this fingerprint shape.`);
+  return parts.join(" ");
+}
+
+export const getBehaviorClusters = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await q<{
+    behavioral_cluster: number; aircraft: number; avg_score: number | null;
+    avg_drift: number | null; avg_stability: number | null; updated_at: string | null;
+  }>(
+    `SELECT behavioral_cluster,
+            count(*)::int AS aircraft,
+            round(avg(profile_score)::numeric, 1)::float AS avg_score,
+            round(avg(drift_score)::numeric, 1)::float AS avg_drift,
+            round(avg(stability_score)::numeric, 1)::float AS avg_stability,
+            max(updated_at)::text AS updated_at
+       FROM aircraft_deep_profiles
+      GROUP BY behavioral_cluster
+      ORDER BY aircraft DESC`,
+  );
+  const grouped = rows.filter((r) => r.behavioral_cluster !== -1);
+  const ungrouped = rows.find((r) => r.behavioral_cluster === -1) ?? null;
+  return {
+    clusters: grouped.map<ClusterRow>((r) => ({
+      ...r,
+      headline: `Cluster ${r.behavioral_cluster}`,
+      meaning: clusterMeaning(r.avg_score, r.avg_drift, r.aircraft),
+    })),
+    ungrouped_aircraft: ungrouped?.aircraft ?? 0,
+    grouped_aircraft: grouped.reduce((a, r) => a + r.aircraft, 0),
+  };
+});
+
+export type ClusterMember = {
+  icao_hex: string;
+  profile_score: number | null;
+  drift_score: number | null;
+  registration: string | null;
+  owner: string | null;
+  county: string | null;
+  detections: number | null;
+  top_dimensions: string[];
+};
+
+const MEMBER_SELECT = `
+  SELECT d.icao_hex, d.profile_score, d.drift_score, d.top_anomaly_dimensions,
+         COALESCE(cop.registration, ap.observed_registration, 'N' || fm.n_number) AS registration,
+         COALESCE(cop.operator_resolved, cop.faa_registrant_name, ap.registered_owner, fm.name) AS owner,
+         ap.primary_county AS county,
+         ap.total_detections AS detections
+    FROM base d
+    LEFT JOIN LATERAL (SELECT * FROM canonical_operator_profiles t WHERE t.icao_hex = upper(d.icao_hex) LIMIT 1) cop ON true
+    LEFT JOIN LATERAL (SELECT * FROM aircraft_profiles t WHERE t.icao_hex = upper(d.icao_hex) ORDER BY t.total_detections DESC NULLS LAST LIMIT 1) ap ON true
+    LEFT JOIN LATERAL (SELECT * FROM faa_master t WHERE t.mode_s_code_hex = upper(d.icao_hex) LIMIT 1) fm ON true
+`;
+
+function topDims(j: Record<string, number> | null): string[] {
+  return Object.entries(j ?? {})
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 3)
+    .map(([k]) => k.replace(/_/g, " "));
+}
+
+export const getClusterMembers = createServerFn({ method: "GET" })
+  .inputValidator((d: { cluster: number; limit?: number }) => ({
+    cluster: Number(d?.cluster),
+    limit: Math.min(d?.limit ?? 40, 200),
+  }))
+  .handler(async ({ data }): Promise<ClusterMember[]> => {
+    const rows = await q<ClusterMember & { top_anomaly_dimensions: Record<string, number> | null }>(
+      `WITH base AS (
+         SELECT icao_hex, profile_score, drift_score, top_anomaly_dimensions
+           FROM aircraft_deep_profiles
+          WHERE behavioral_cluster = $1
+          ORDER BY profile_score DESC NULLS LAST
+          LIMIT $2
+       )
+       ${MEMBER_SELECT}
+       ORDER BY d.profile_score DESC NULLS LAST`,
+      [data.cluster, data.limit],
+    );
+    return rows.map((r) => ({ ...r, top_dimensions: topDims(r.top_anomaly_dimensions) }));
+  });
+
+// Aircraft whose behaviour changed most since the previous model run
+export const getDriftWatch = createServerFn({ method: "GET" })
+  .inputValidator((d: { limit?: number } = {}) => ({ limit: Math.min(d?.limit ?? 12, 50) }))
+  .handler(async ({ data }): Promise<ClusterMember[]> => {
+    const rows = await q<ClusterMember & { top_anomaly_dimensions: Record<string, number> | null }>(
+      `WITH base AS (
+         SELECT icao_hex, profile_score, drift_score, top_anomaly_dimensions
+           FROM aircraft_deep_profiles
+          WHERE behavioral_cluster <> -1 AND drift_score IS NOT NULL
+          ORDER BY drift_score DESC
+          LIMIT $1
+       )
+       ${MEMBER_SELECT}
+       ORDER BY d.drift_score DESC`,
+      [data.limit],
+    );
+    return rows.map((r) => ({ ...r, top_dimensions: topDims(r.top_anomaly_dimensions) }));
+  });
+
+// Fingerprinting backlog + trained-model provenance
+export const getMlOpsHealth = createServerFn({ method: "GET" }).handler(async () => {
+  const queue = await q<{ status: string; n: number; oldest: string | null; newest: string | null; errors: number }>(
+    `SELECT status, count(*)::int AS n, min(created_at)::text AS oldest,
+            max(created_at)::text AS newest,
+            count(*) FILTER (WHERE error_message IS NOT NULL)::int AS errors
+       FROM aircraft_embedding_queue GROUP BY status`,
+  ).catch(() => []);
+  const models = await q<{
+    model_name: string; model_version: string; trained_at: string; training_samples: number | null;
+    anomaly_rate: number | null; contamination: number | null; feature_count: number | null;
+    training_data_start: string | null; training_data_end: string | null;
+  }>(
+    `SELECT model_name, model_version, trained_at::text, training_samples, anomaly_rate,
+            contamination, feature_count, training_data_start::text, training_data_end::text
+       FROM ml_model_performance ORDER BY trained_at DESC LIMIT 5`,
+  ).catch(() => []);
+  const pending = queue.find((r) => r.status === "pending");
+  const latest = models[0] ?? null;
+  const modelAgeH = latest ? (Date.now() - new Date(latest.trained_at).getTime()) / 3.6e6 : null;
+  return {
+    queue,
+    pending: pending?.n ?? 0,
+    pending_oldest: pending?.oldest ?? null,
+    queue_stalled: !!pending && pending.n > 0 && (Date.now() - new Date(pending.newest ?? pending.oldest ?? Date.now()).getTime()) / 3.6e6 > 48,
+    models,
+    latest_model: latest,
+    model_age_hours: modelAgeH == null ? null : Math.round(modelAgeH),
+  };
+});

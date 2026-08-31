@@ -25,7 +25,7 @@ export function hasNim(): boolean {
 async function nimCall(messages: NimMsg[], model: string, useTools: boolean): Promise<NimMsg> {
   let lastErr = "";
   // NIM occasionally returns a transient 500/429 — retry with short backoff.
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     const res = await fetch(NIM_URL, {
       method: "POST",
       headers: {
@@ -35,7 +35,7 @@ async function nimCall(messages: NimMsg[], model: string, useTools: boolean): Pr
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.35,
+        temperature: 0.3 + attempt * 0.07,
         max_tokens: 3000,
         ...(useTools ? { tools: JOSIAH_TOOLS } : {}),
       }),

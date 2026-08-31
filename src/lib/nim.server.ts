@@ -34,7 +34,7 @@ async function nimCall(messages: NimMsg[], model: string, useTools: boolean): Pr
       messages,
       temperature: 0.35,
       max_tokens: 3000,
-      ...(useTools ? { tools: JOSIAH_TOOLS, tool_choice: "auto" } : {}),
+      ...(useTools ? { tools: JOSIAH_TOOLS } : {}),
     }),
   });
   if (!res.ok) {

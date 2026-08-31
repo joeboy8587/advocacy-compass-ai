@@ -86,7 +86,9 @@ function Command() {
 
       <ModelHealthStrip />
 
-      {/* KPIs */}
+      <MlOpsPanel />
+
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Detections 24h" value={fmt(k.detections_24h)} icon={Radar} tone="green" hint={freshHint(k.detections_age_hours)} />
         <Stat label="Unique Aircraft" value={fmt(k.unique_aircraft_24h)} icon={Plane} tone="cyan" />

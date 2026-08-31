@@ -94,3 +94,84 @@ export async function gatherBehaviorContext(icao: string): Promise<string> {
   ].join("\n\n");
 }
 
+
+/** Keyword retrieval over the evidence corpus (chunks were embedded with a 384-dim
+ *  local model we cannot re-encode against, so we match on text, not vectors). */
+export async function gatherEvidenceContext(question: string, limit = 4): Promise<string> {
+  const terms = question
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3)
+    .slice(0, 8);
+  if (!terms.length) return "";
+  const rows = await neonQuery<{ file_name: string; content: string; rank: number }>(
+    `SELECT file_name, left(content, 900) AS content,
+            ts_rank(to_tsvector('english', content), websearch_to_tsquery('english', $1))::float AS rank
+       FROM evidence_rag_chunks
+      WHERE to_tsvector('english', content) @@ websearch_to_tsquery('english', $1)
+      ORDER BY rank DESC
+      LIMIT $2`,
+    [terms.join(" OR "), limit],
+  ).catch(() => []);
+  if (!rows.length) return "";
+  return [
+    "## Evidence corpus matches (verbatim source excerpts — cite by file name)",
+    ...rows.map((r) => `### ${r.file_name}\n${r.content}`),
+  ].join("\n\n");
+}
+
+/** Penalty theories with statute citations — attach whenever a violation is named. */
+export async function gatherLegalExposure(): Promise<string> {
+  const rows = await neonQuery<{
+    theory_code: string; label: string | null; citation: string | null;
+    max_penalty: string | null; basis: string | null; confidence: string | null;
+  }>(
+    `SELECT theory_code, label, citation, max_penalty, basis, confidence
+       FROM watchtower_link.legal_exposure ORDER BY theory_code`,
+  ).catch(() => []);
+  if (!rows.length) return "";
+  return [
+    "## Legal exposure theories (use these citations verbatim; do not invent penalties)",
+    ...rows.map(
+      (r) => `- ${r.theory_code} — ${r.label ?? ""} | ${r.citation ?? "no citation"} | max penalty: ${r.max_penalty ?? "—"} | basis: ${r.basis ?? "—"} | confidence: ${r.confidence ?? "—"}`,
+    ),
+  ].join("\n");
+}
+
+/** Cluster peers + autonomously mined patterns involving this airframe. */
+export async function gatherClusterContext(icao: string): Promise<string> {
+  const peers = await neonQuery<{ behavioral_cluster: number | null; peers: number; avg_score: number | null; avg_drift: number | null }>(
+    `WITH me AS (SELECT behavioral_cluster FROM aircraft_deep_profiles WHERE lower(icao_hex)=lower($1) LIMIT 1)
+     SELECT d.behavioral_cluster, count(*)::int AS peers,
+            round(avg(d.profile_score)::numeric,1)::float AS avg_score,
+            round(avg(d.drift_score)::numeric,1)::float AS avg_drift
+       FROM aircraft_deep_profiles d, me
+      WHERE d.behavioral_cluster = me.behavioral_cluster AND me.behavioral_cluster IS NOT NULL
+      GROUP BY d.behavioral_cluster`,
+    [icao],
+  ).catch(() => []);
+  const patterns = await neonQuery<{ pattern_type: string; pattern_description: string | null; confidence: number | null; discovered_at: string }>(
+    `SELECT pattern_type, pattern_description, confidence::float, discovered_at::text
+       FROM learned_patterns
+      WHERE discovered_at > now() - interval '14 days'
+        AND aircraft_icao_hexes && ARRAY[lower($1), upper($1)]
+      ORDER BY confidence DESC NULLS LAST LIMIT 8`,
+    [icao],
+  ).catch(() => []);
+  const out: string[] = [];
+  if (peers[0]) {
+    const p = peers[0];
+    out.push(
+      `## Behaviour cluster\nCluster ${p.behavioral_cluster} holds ${p.peers} aircraft with the same flight fingerprint shape (average abnormality ${p.avg_score ?? "—"}, average drift ${p.avg_drift ?? "—"}). Cluster -1 means unclustered/insufficient data.`,
+    );
+  }
+  if (patterns.length) {
+    out.push(
+      ["## Autonomously mined patterns involving this aircraft (last 14 days)",
+        ...patterns.map((r) => `- [${r.pattern_type}] ${r.pattern_description ?? ""} (confidence ${r.confidence ?? "—"}, ${r.discovered_at.slice(0, 10)})`),
+      ].join("\n"),
+    );
+  }
+  return out.join("\n\n");
+}

@@ -227,7 +227,7 @@ export const sendJosiahMessage = createServerFn({ method: "POST" })
 ${memoryBlock}
 
 # LIVE CORPUS CONTEXT
-${context}${caseCtx ? `\n\n${caseCtx}` : ""}${osint}${doctrine ? `\n\n# Doctrine Library\n${doctrine}` : ""}`;
+${context}${caseCtx ? `\n\n${caseCtx}` : ""}${osint}${doctrine ? `\n\n# Doctrine Library\n${doctrine}` : ""}${evidenceCtx ? `\n\n# Evidence Corpus\n${evidenceCtx}` : ""}${legalCtx ? `\n\n# Legal Exposure\n${legalCtx}` : ""}`;
 
     const messages = history
       .slice(-24)

@@ -115,8 +115,8 @@ function PatternsPage() {
           </div>
         )}
         <div className="divide-y divide-border">
-          {rows.data?.map((p) => (
-            <div key={p.id} className="py-3 text-xs">
+          {rows.data?.map((p, i) => (
+            <div key={`${p.id}-${i}`} className="py-3 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-mono neon-text-green">{p.pattern_type}</span>
                 <span className="tabular-nums text-muted-foreground">

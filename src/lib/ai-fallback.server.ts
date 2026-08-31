@@ -29,9 +29,37 @@ export async function generateTextWithFallback(opts: {
   system?: string;
   prompt?: string;
   messages?: Msg[];
+  /** Give the model live read-only access to the Neon corpus (NVIDIA NIM path). */
+  tools?: boolean;
 }): Promise<GenResult> {
   const lovableKey = process.env.LOVABLE_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+
+  // NVIDIA NIM is the primary brain for Josiah — it can query the database directly.
+  if (process.env.NVIDIA_NIM_API_KEY) {
+    try {
+      const { nimInvestigate } = await import("./nim.server");
+      const chat: Array<{ role: "user" | "assistant"; content: string }> = [];
+      if (opts.messages) {
+        for (const m of opts.messages) {
+          if (m.role === "system") continue;
+          chat.push({ role: m.role, content: m.content });
+        }
+      }
+      if (opts.prompt) chat.push({ role: "user", content: opts.prompt });
+      if (!chat.length) chat.push({ role: "user", content: "Proceed." });
+      const { text, model } = await nimInvestigate({
+        system: opts.system ?? "",
+        messages: chat,
+        tools: opts.tools !== false,
+      });
+      if (text) return { text, provider: "nvidia" as const, model };
+      throw new Error("NVIDIA NIM returned empty text");
+    } catch (e) {
+      console.warn("[AI] NVIDIA NIM failed, falling back:", (e as Error).message?.slice(0, 200));
+      if (!lovableKey && !openaiKey) throw e;
+    }
+  }
 
   // Try Lovable Gateway first
   if (lovableKey) {

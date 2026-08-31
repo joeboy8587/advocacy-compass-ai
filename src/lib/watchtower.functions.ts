@@ -653,7 +653,7 @@ export const getTopOffenders = createServerFn({ method: "GET" }).handler(async (
 // ---------- Case Mutations (Phase 2) ----------
 export type CaseUpdateInput = {
   id: string;
-  status?: "DRAFT" | "REVIEW" | "CONFIRMED" | "PUBLISHED" | "DISMISSED";
+  status?: "DRAFT" | "REVIEW" | "CONFIRMED" | "PUBLISHED" | "MERGED" | "DISMISSED";
   reviewer_notes?: string | null;
   public_summary?: string | null;
   dismissed_reason?: string | null;

@@ -62,7 +62,10 @@ export async function nimInvestigate(opts: {
 }): Promise<{ text: string; model: string; toolCalls: number }> {
   const model = opts.model ?? process.env.NVIDIA_NIM_MODEL ?? DEFAULT_NIM_MODEL;
   const useTools = opts.tools !== false;
-  const convo: NimMsg[] = [{ role: "system", content: opts.system }, ...opts.messages];
+  const toolBrief = useTools
+    ? `\n\n# LIVE DATABASE ACCESS\nYou are connected to the live Watchtower Neon PostgreSQL corpus and the case files. You have these tools:\n- list_tables(filter) — discover tables/columns before writing SQL\n- run_sql(sql) — read-only SELECT against live data (always LIMIT)\n- search_cases(query) — find case files by case id, tail, ICAO, owner, county\n- get_case(case_id) — full case file plus linked detections and violations\n- aircraft_dossier(identifier) — tail/ICAO dossier: registry owner, flight stats, low-altitude counts, violations, anomalies\n\nRULES: When the operator asks anything factual — counts, tails, owners, dates, cases — CALL A TOOL and answer from the returned rows. Never guess a number. If a query errors, call list_tables and correct the column names. Cite the tail numbers, case ids and counts you retrieved. Speak plain English to a non-technical operator: explain what the data means, never dump raw SQL unless asked.`
+    : "";
+  const convo: NimMsg[] = [{ role: "system", content: opts.system + toolBrief }, ...opts.messages];
   const maxSteps = opts.maxSteps ?? 5;
   let toolCalls = 0;
 

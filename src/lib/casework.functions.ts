@@ -1314,7 +1314,7 @@ export const getDuplicateGroups = createServerFn({ method: "GET" }).handler(asyn
             subject_reg, subject_icao, subject_owner, primary_county,
             total_events, opened_at, auto_summary
      FROM cases
-     WHERE status <> 'DISMISSED'
+     WHERE status NOT IN ('DISMISSED','MERGED')
      ORDER BY wti_score DESC NULLS LAST, opened_at DESC`,
   );
 
@@ -1524,7 +1524,7 @@ export const consolidateCluster = createServerFn({ method: "POST" })
       `SELECT case_id, wti_score::text, total_events, status
          FROM cases
         WHERE case_id = ANY($1::text[])
-          AND status <> 'DISMISSED'`,
+          AND status NOT IN ('DISMISSED','MERGED')`,
       [data.case_ids],
     );
     if (rows.length < 2) return { ok: false as const, error: "fewer than 2 active cases in cluster" };
@@ -2145,7 +2145,7 @@ export const listUnknownSubjects = createServerFn({ method: "GET" }).handler(asy
   const rows = await q<{ case_id: string; status: string; subject_icao: string | null; subject_reg: string | null; subject_owner: string | null }>(
     `SELECT case_id, status, subject_icao, subject_reg, subject_owner
        FROM cases
-      WHERE status <> 'DISMISSED'
+      WHERE status NOT IN ('DISMISSED','MERGED')
         AND (NULLIF(trim(COALESCE(subject_reg,'')),'') IS NULL
              OR NULLIF(trim(COALESCE(subject_owner,'')),'') IS NULL)
       ORDER BY opened_at DESC NULLS LAST
@@ -2193,7 +2193,7 @@ export const autoResolveUnknownSubjects = createServerFn({ method: "POST" })
     const min = data?.minConfidence ?? 85;
     const rows = await q<{ case_id: string }>(
       `SELECT case_id FROM cases
-        WHERE status <> 'DISMISSED'
+        WHERE status NOT IN ('DISMISSED','MERGED')
           AND (NULLIF(trim(COALESCE(subject_reg,'')),'') IS NULL
                OR NULLIF(trim(COALESCE(subject_owner,'')),'') IS NULL)
         ORDER BY opened_at DESC NULLS LAST LIMIT 60`,

@@ -4,7 +4,7 @@
 import { JOSIAH_TOOLS, runJosiahTool } from "./josiah-tools.server";
 
 const NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-export const DEFAULT_NIM_MODEL = "meta/llama-3.3-70b-instruct";
+export const DEFAULT_NIM_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 
 type NimMsg = {
   role: "system" | "user" | "assistant" | "tool";

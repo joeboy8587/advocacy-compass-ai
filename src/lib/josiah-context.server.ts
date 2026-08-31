@@ -57,8 +57,12 @@ export async function gatherCaseContext(caseId: string): Promise<string> {
   );
   if (!rows[0]) return "";
   const icao = (rows[0].subject_icao as string | null) ?? null;
-  const ml = icao ? await gatherBehaviorContext(icao) : "";
-  return `## Bound Case ${caseId}\n${JSON.stringify(rows[0], null, 2)}${ml ? `\n\n${ml}` : ""}`;
+  const [ml, clusters] = await Promise.all([
+    icao ? gatherBehaviorContext(icao) : Promise.resolve(""),
+    icao ? gatherClusterContext(icao) : Promise.resolve(""),
+  ]);
+  return `## Bound Case ${caseId}\n${JSON.stringify(rows[0], null, 2)}${ml ? `\n\n${ml}` : ""}${clusters ? `\n\n${clusters}` : ""}`;
+
 }
 
 /** Behaviour-model layer: profile score, drift, top anomaly dimensions, behavioural twins. */

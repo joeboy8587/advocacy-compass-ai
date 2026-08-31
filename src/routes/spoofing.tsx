@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { Radio, ShieldAlert, Plane } from "lucide-react";
 import {
@@ -49,6 +50,7 @@ function SpoofingPage() {
           <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">
             ml_anomaly_detections // 7d aggregate · 30s refresh
           </p>
+          <ExportBar rows={feed.data as unknown as Array<Record<string, unknown>>} fileName="spoofing" note="csv = rows shown · print = full page" />
         </header>
 
         {/* Breakdown */}

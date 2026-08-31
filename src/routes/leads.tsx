@@ -56,6 +56,7 @@ function LeadsPage() {
           Every aircraft here was flagged by the behaviour model but never picked up by the rule engine. Work the list
           top-down: the highest number is the aircraft flying least like everything else in the sky.
         </p>
+        <ExportBar rows={q.data?.leads as unknown as Array<Record<string, unknown>>} fileName="ml-leads" note="csv = rows shown · print = full page" />
       </header>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

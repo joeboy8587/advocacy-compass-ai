@@ -42,6 +42,7 @@ function Detections() {
         >
           91.227 Violators only
         </button>
+        <ExportBar rows={q.data as unknown as Array<Record<string, unknown>>} fileName="detections" note="csv = rows shown · print = full page" />
       </header>
 
       <div className="panel scanline overflow-hidden">

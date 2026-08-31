@@ -64,6 +64,7 @@ function CasesIndex() {
             </button>
           ))}
         </div>
+        <ExportBar rows={q.data as unknown as Array<Record<string, unknown>>} fileName="cases" note="csv = rows shown · print = full page" />
       </header>
 
       <SuggestedPanel />

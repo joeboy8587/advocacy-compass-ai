@@ -156,6 +156,7 @@ function Alerts() {
             <Download className="size-3" /> CSV ({rows.length})
           </button>
         </div>
+        <ExportBar rows={rows as unknown as Array<Record<string, unknown>>} fileName="alerts" note="csv = rows shown · print = full page" />
       </header>
 
       <div className="panel scanline overflow-x-auto">

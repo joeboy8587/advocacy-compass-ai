@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { GitBranch, Loader2 } from "lucide-react";
@@ -48,6 +49,7 @@ function PatternsPage() {
           These are patterns the system found by itself in the raw detections — most often a handoff, where one aircraft
           leaves an area and another arrives within a couple of minutes. Confidence is the model's own certainty.
         </p>
+        <ExportBar rows={rows.data as unknown as Array<Record<string, unknown>>} fileName="tactical-patterns" note="csv = rows shown · print = full page" />
       </header>
 
       <section className="space-y-2">

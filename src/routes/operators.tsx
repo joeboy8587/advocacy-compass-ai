@@ -32,6 +32,8 @@ function OperatorsPage() {
   return (
     <div className="p-6 space-y-4">
       <OperatorNetworkPanel search={search} />
+      <ShellNetworkPanel />
+
       <header>
         <h1 className="text-2xl neon-text-orange flex items-center gap-2">
           <Users className="size-6" /> Operators &amp; FAA Registry

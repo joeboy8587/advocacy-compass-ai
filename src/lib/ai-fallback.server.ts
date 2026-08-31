@@ -21,7 +21,7 @@ function openaiEquivalent(model: string): string {
   return "gpt-4o-mini";
 }
 
-export type GenResult = { text: string; provider: "lovable" | "openai"; model: string };
+export type GenResult = { text: string; provider: "nvidia" | "lovable" | "openai"; model: string };
 
 /** Generate text with automatic Lovable→OpenAI fallback. */
 export async function generateTextWithFallback(opts: {

@@ -1,14 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 
-// ---------- Josiah Vision: extract aircraft data from a radar screenshot ----------
+// ---------- Josiah Vision: structured scene extraction from a radar screenshot ----------
+// This is NOT OCR. The model reads the screenshot as a structured scene: it understands
+// that "REG: N/A" in the FR24 info panel means a MASKED contact (not an absent aircraft),
+// and it reads the surrounding map labels ("No call sign" pins included).
 export type VisionExtract = {
+  shot_type: string | null; // "fr24" | "adsbx" | "welltory" | "other"
   registration: string | null;
   icao_hex: string | null;
   operator: string | null;
   aircraft_type: string | null;
   altitude_ft: number | null;
   groundspeed_kts: number | null;
+  masked: boolean; // selected contact shows N/A registration => masked, NOT missing
+  map_labels: string[]; // every label visible on the map, incl. "No call sign"
+  contact_count: number | null; // how many aircraft contacts are visible on the scope
   status_bar_time: string | null; // "HH:MM" 24h
   status_bar_period: "AM" | "PM" | null;
   capture_date: string | null; // "YYYY-MM-DD" read from the radar/map date block
@@ -28,26 +35,37 @@ export const analyzeScreenshot = createServerFn({ method: "POST" })
     const openaiKey = process.env.OPENAI_API_KEY;
     if (!lovableKey && !openaiKey) return { ok: false, error: "No AI key configured (LOVABLE_API_KEY or OPENAI_API_KEY)" };
 
-    const system = `You are Josiah Vision — a forensic radar-screenshot OCR/extractor for Watchtower.
-Read a Flightradar24 / ADS-B Exchange / similar tracker screenshot and extract structured aircraft data.
-Read the STATUS BAR clock at the top of the phone (not EXIF) for the time.
-CRITICAL: also find the DATE. Look for a date block anywhere in the image — the tracker's map/playback date label, a flight-date row, a timeline header, or the phone's lock-screen date. NEVER guess a date from the filename. If no date is legible anywhere, return null for capture_date. Return ONLY a JSON object — no prose, no markdown.
+    const system = `You are Josiah Vision — a forensic scene extractor for Watchtower. You do STRUCTURED SCENE EXTRACTION, not character recognition.
+You are looking at a flight-tracker screenshot (Flightradar24 / ADS-B Exchange / similar) or occasionally a biometrics panel.
+
+CRITICAL SEMANTICS:
+- If the selected-aircraft info panel shows "REG: N/A", "N/A", "—", or a blank registration/callsign, that is a MASKED contact. Set "masked": true and leave "registration" null. NEVER conclude "no aircraft" — a masked, loitering contact is the highest-value evidence class in this archive.
+- Read EVERY label drawn on the map into "map_labels", including tail numbers and the literal string "No call sign".
+- "contact_count" = how many distinct aircraft contacts/icons you can see on the scope.
+- Read the STATUS BAR clock at the top of the phone (not EXIF) for the time.
+- Find the DATE only if a date is actually visible (map/playback date label, flight-date row, timeline header, lock-screen date). NEVER guess a date from the filename. If no date is legible, return null.
+Return ONLY a JSON object — no prose, no markdown.
 Schema:
 {
-  "registration": "<N-number, uppercase, or null>",
+  "shot_type": "<fr24|adsbx|welltory|other>",
+  "registration": "<N-number of the SELECTED aircraft, uppercase, or null if masked/absent>",
   "icao_hex": "<6-char hex lowercase, or null>",
   "operator": "<owner/operator string, or null>",
-  "aircraft_type": "<type/model, or null>",
+  "aircraft_type": "<type/model, e.g. C172S, or null>",
   "altitude_ft": <integer or null>,
   "groundspeed_kts": <integer or null>,
+  "masked": <true if the selected contact has no registration/callsign shown, else false>,
+  "map_labels": ["<every label visible on the map, incl. 'No call sign'>"],
+  "contact_count": <integer count of aircraft contacts visible, or null>,
   "status_bar_time": "<HH:MM 24h or null>",
   "status_bar_period": "<AM|PM or null>",
-  "capture_date": "<YYYY-MM-DD read from the radar/map date block, playback date label, or flight-date text visible in the screenshot; null if no date is visible>",
-  "capture_date_source": "<short description of where the date was read, e.g. 'map date label', 'playback bar', or null>",
+  "capture_date": "<YYYY-MM-DD visible in the image; null if not visible>",
+  "capture_date_source": "<where the date was read, e.g. 'map date label', or null>",
   "departure_airport": "<IATA/ICAO or null>",
   "map_area": "<area/county/city visible on map or null>",
-  "notes": "<short note about other aircraft visible, flight-path shape/color, or null>"
+  "notes": "<flight-path shape (orbit/loop/transit), other contacts, anything forensically relevant>"
 }`;
+
 
     async function tryLovable(): Promise<string> {
       if (!lovableKey) throw new Error("LOVABLE_API_KEY missing");
@@ -112,8 +130,20 @@ Schema:
       const end = cleaned.lastIndexOf("}");
       const jsonStr = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
       const parsed = JSON.parse(jsonStr) as Partial<VisionExtract>;
+      const reg = parsed.registration ? String(parsed.registration).toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+      const labels = Array.isArray(parsed.map_labels)
+        ? parsed.map_labels.map((l) => String(l).trim()).filter(Boolean).slice(0, 40)
+        : [];
       const norm: VisionExtract = {
-        registration: parsed.registration ? String(parsed.registration).toUpperCase().replace(/[^A-Z0-9]/g, "") : null,
+        shot_type: parsed.shot_type ? String(parsed.shot_type).toLowerCase() : null,
+        masked: parsed.masked === true || (!reg && (labels.length > 0 || parsed.aircraft_type != null || parsed.altitude_ft != null)),
+        map_labels: labels,
+        contact_count:
+          typeof parsed.contact_count === "number"
+            ? Math.max(0, Math.round(parsed.contact_count))
+            : labels.length || null,
+        registration: reg && reg !== "NA" ? reg : null,
+
         icao_hex: parsed.icao_hex ? String(parsed.icao_hex).toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 6) : null,
         operator: parsed.operator ?? null,
         aircraft_type: parsed.aircraft_type ?? null,
@@ -182,6 +212,15 @@ async function ensureSchema() {
         );
         ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS status_bar_local text;
         ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS match_method text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS masked boolean NOT NULL DEFAULT false;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS map_labels text[];
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS contact_count int;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS shot_type text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_source text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_confidence text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_conflict boolean NOT NULL DEFAULT false;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_signals jsonb;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS bind_class text;
         CREATE INDEX IF NOT EXISTS radar_screenshots_uploaded_idx ON radar_screenshots(uploaded_at DESC);
         CREATE INDEX IF NOT EXISTS radar_screenshots_tail_idx ON radar_screenshots(tail);
         CREATE INDEX IF NOT EXISTS radar_screenshots_icao_idx ON radar_screenshots(icao_hex);
@@ -215,7 +254,16 @@ export type RadarScreenshot = {
   match_status: string;
   status_bar_local: string | null;
   match_method: string | null;
+  masked: boolean;
+  map_labels: string[] | null;
+  contact_count: number | null;
+  shot_type: string | null;
+  time_source: string | null;
+  time_confidence: string | null;
+  time_conflict: boolean;
+  bind_class: string | null;
 };
+
 
 export type DetectionMatch = {
   id: string;
@@ -251,6 +299,14 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
       notes?: string | null;
       source?: string;
       status_bar_local?: string | null;
+      masked?: boolean | null;
+      map_labels?: string[] | null;
+      contact_count?: number | null;
+      shot_type?: string | null;
+      time_source?: string | null;
+      time_confidence?: string | null;
+      time_conflict?: boolean | null;
+      time_signals?: Record<string, unknown> | null;
     }) => d,
   )
   .handler(async ({ data }) => {
@@ -265,8 +321,11 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
         (source, filename, file_size, sha256, image_data, mime_type,
          exif_taken_at, tz_offset_min, raw_exif,
          tail, icao_hex, operator, aircraft_type,
-         altitude_ft, groundspeed_kts, notes, status_bar_local)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         altitude_ft, groundspeed_kts, notes, status_bar_local,
+         masked, map_labels, contact_count, shot_type,
+         time_source, time_confidence, time_conflict, time_signals)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+               $18,$19,$20,$21,$22,$23,$24,$25)
        RETURNING id`,
       [
         data.source ?? "flightradar24",
@@ -286,6 +345,14 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
         data.groundspeed_kts ?? null,
         data.notes ?? null,
         data.status_bar_local ?? null,
+        data.masked ?? false,
+        data.map_labels ?? null,
+        data.contact_count ?? null,
+        data.shot_type ?? null,
+        data.time_source ?? null,
+        data.time_confidence ?? null,
+        data.time_conflict ?? false,
+        data.time_signals ? JSON.stringify(data.time_signals) : null,
       ],
     );
     return { id: rows[0].id, duplicate: false as const };
@@ -301,7 +368,8 @@ export const listScreenshots = createServerFn({ method: "GET" })
     let where = "";
     if (data.search && data.search.trim()) {
       params.push(`%${data.search.trim()}%`);
-      where = `WHERE tail ILIKE $2 OR icao_hex ILIKE $2 OR operator ILIKE $2 OR filename ILIKE $2`;
+      where = `WHERE tail ILIKE $2 OR icao_hex ILIKE $2 OR operator ILIKE $2 OR filename ILIKE $2
+               OR array_to_string(COALESCE(map_labels,'{}'), ',') ILIKE $2`;
     }
     return q<RadarScreenshot>(
       `SELECT id, uploaded_at, source, filename, file_size, sha256,
@@ -309,7 +377,9 @@ export const listScreenshots = createServerFn({ method: "GET" })
               exif_taken_at, tz_offset_min, tail, icao_hex, operator, aircraft_type,
               altitude_ft, groundspeed_kts, notes,
               match_count, match_window_s, best_match_delta_s, match_status,
-              status_bar_local, match_method
+              status_bar_local, match_method,
+              masked, map_labels, contact_count, shot_type,
+              time_source, time_confidence, time_conflict, bind_class
        FROM radar_screenshots
        ${where}
        ORDER BY uploaded_at DESC
@@ -317,6 +387,7 @@ export const listScreenshots = createServerFn({ method: "GET" })
       params,
     );
   });
+
 
 // ---------- Match against detections ----------
 // Strategy:
@@ -339,8 +410,13 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       icao_hex: string | null;
       status_bar_local: string | null;
       tz_offset_min: number | null;
+      masked: boolean | null;
+      map_labels: string[] | null;
+      aircraft_type: string | null;
+      altitude_ft: number | null;
     }>(
-      `SELECT id, exif_taken_at, tail, icao_hex, status_bar_local, tz_offset_min
+      `SELECT id, exif_taken_at, tail, icao_hex, status_bar_local, tz_offset_min,
+              masked, map_labels, aircraft_type, altitude_ft
        FROM radar_screenshots WHERE id = $1`,
       [data.id],
     );
@@ -366,12 +442,57 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       if (r[0]?.n_number) tail = `N${r[0].n_number}`;
     }
 
+    // Tails visible on the map, even when the SELECTED contact is masked.
+    const labelTails = (shot.map_labels ?? [])
+      .map((l) => String(l).toUpperCase().replace(/[^A-Z0-9]/g, ""))
+      .filter((l) => /^N[0-9][0-9A-Z]{1,4}$/.test(l));
+
+    // ---------- UNIDENTIFIED PATH ----------
+    // The selected contact has no registration. That is a MASKED contact, not an absent
+    // aircraft. We correlate on time (and on any tails visible on the map) and bind it
+    // to a class — we never call it a phantom.
     if (!tail && !icao) {
-      await q(
-        `UPDATE radar_screenshots SET match_status='NO_AIRCRAFT', match_count=0, match_window_s=$2, match_method=NULL WHERE id=$1`,
-        [shot.id, win],
+      if (!shot.exif_taken_at) {
+        await q(
+          `UPDATE radar_screenshots SET match_status='NEEDS_DATE', match_count=0, match_window_s=$2,
+             match_method=NULL, bind_class='NEEDS_DATE' WHERE id=$1`,
+          [shot.id, win],
+        );
+        return { matches: [] as DetectionMatch[], status: "NEEDS_DATE" as const, method: null as string | null };
+      }
+      const pu: unknown[] = [shot.exif_taken_at, win];
+      let labelPred = "";
+      if (labelTails.length) {
+        pu.push(labelTails);
+        labelPred = `AND upper(d.registration) = ANY($${pu.length})`;
+      }
+      const nearby = await q<DetectionMatch>(
+        `SELECT d.id, d.captured_at, d.icao_hex, d.registration,
+                d.altitude_ft, d.speed_kts AS groundspeed_kts, d.county,
+                d.latitude, d.longitude,
+                abs(extract(epoch from (d.captured_at - $1::timestamptz)))::int AS delta_s
+         FROM detections d
+         WHERE d.captured_at BETWEEN ($1::timestamptz - ($2 || ' seconds')::interval)
+                                 AND ($1::timestamptz + ($2 || ' seconds')::interval)
+         ${labelPred}
+         ORDER BY delta_s ASC
+         LIMIT 25`,
+        pu,
       );
-      return { matches: [] as DetectionMatch[], status: "NO_AIRCRAFT" as const, method: null as string | null };
+      const uStatus = nearby.length === 0
+        ? "UNEXPLAINED"
+        : shot.masked
+          ? "CONFIRMED_MASKED"
+          : "PRESENCE_CORRELATED";
+      const uMethod = labelTails.length ? "map_labels" : "presence";
+      await q(
+        `UPDATE radar_screenshots
+           SET match_status=$2, match_count=$3, match_window_s=$4,
+               best_match_id=$5, best_match_delta_s=$6, match_method=$7, bind_class=$2
+         WHERE id=$1`,
+        [shot.id, uStatus, nearby.length, win, nearby[0]?.id ?? null, nearby[0]?.delta_s ?? null, uMethod],
+      );
+      return { matches: nearby, status: uStatus, method: uMethod as string | null };
     }
 
     // Build aircraft predicate, including resolved icao/tail
@@ -443,20 +564,20 @@ export const matchScreenshot = createServerFn({ method: "POST" })
     const status = !hasExactDate
       ? "NEEDS_DATE"
       : matches.length === 0
-        ? "NO_MATCH"
-        : best.delta_s <= 60
-          ? "LOCKED"
-          : best.delta_s <= 300
-            ? "STRONG"
-            : "WEAK";
+        ? "UNEXPLAINED"
+        : best.delta_s <= 300
+          ? "CONFIRMED_NAMED"
+          : "PRESENCE_CORRELATED";
     await q(
       `UPDATE radar_screenshots
          SET match_status=$2, match_count=$3, match_window_s=$4,
              best_match_id=$5, best_match_delta_s=$6, match_method=$7,
+             bind_class=$2,
              tail = COALESCE(tail, $8), icao_hex = COALESCE(icao_hex, $9)
        WHERE id=$1`,
       [shot.id, status, matches.length, win, best?.id ?? null, best?.delta_s ?? null, method, tail, icao],
     );
+
     return { matches, status, method };
   });
 

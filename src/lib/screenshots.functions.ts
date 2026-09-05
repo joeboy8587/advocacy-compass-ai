@@ -1,14 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 
-// ---------- Josiah Vision: extract aircraft data from a radar screenshot ----------
+// ---------- Josiah Vision: structured scene extraction from a radar screenshot ----------
+// This is NOT OCR. The model reads the screenshot as a structured scene: it understands
+// that "REG: N/A" in the FR24 info panel means a MASKED contact (not an absent aircraft),
+// and it reads the surrounding map labels ("No call sign" pins included).
 export type VisionExtract = {
+  shot_type: string | null; // "fr24" | "adsbx" | "welltory" | "other"
   registration: string | null;
   icao_hex: string | null;
   operator: string | null;
   aircraft_type: string | null;
   altitude_ft: number | null;
   groundspeed_kts: number | null;
+  masked: boolean; // selected contact shows N/A registration => masked, NOT missing
+  map_labels: string[]; // every label visible on the map, incl. "No call sign"
+  contact_count: number | null; // how many aircraft contacts are visible on the scope
   status_bar_time: string | null; // "HH:MM" 24h
   status_bar_period: "AM" | "PM" | null;
   capture_date: string | null; // "YYYY-MM-DD" read from the radar/map date block
@@ -28,26 +35,37 @@ export const analyzeScreenshot = createServerFn({ method: "POST" })
     const openaiKey = process.env.OPENAI_API_KEY;
     if (!lovableKey && !openaiKey) return { ok: false, error: "No AI key configured (LOVABLE_API_KEY or OPENAI_API_KEY)" };
 
-    const system = `You are Josiah Vision — a forensic radar-screenshot OCR/extractor for Watchtower.
-Read a Flightradar24 / ADS-B Exchange / similar tracker screenshot and extract structured aircraft data.
-Read the STATUS BAR clock at the top of the phone (not EXIF) for the time.
-CRITICAL: also find the DATE. Look for a date block anywhere in the image — the tracker's map/playback date label, a flight-date row, a timeline header, or the phone's lock-screen date. NEVER guess a date from the filename. If no date is legible anywhere, return null for capture_date. Return ONLY a JSON object — no prose, no markdown.
+    const system = `You are Josiah Vision — a forensic scene extractor for Watchtower. You do STRUCTURED SCENE EXTRACTION, not character recognition.
+You are looking at a flight-tracker screenshot (Flightradar24 / ADS-B Exchange / similar) or occasionally a biometrics panel.
+
+CRITICAL SEMANTICS:
+- If the selected-aircraft info panel shows "REG: N/A", "N/A", "—", or a blank registration/callsign, that is a MASKED contact. Set "masked": true and leave "registration" null. NEVER conclude "no aircraft" — a masked, loitering contact is the highest-value evidence class in this archive.
+- Read EVERY label drawn on the map into "map_labels", including tail numbers and the literal string "No call sign".
+- "contact_count" = how many distinct aircraft contacts/icons you can see on the scope.
+- Read the STATUS BAR clock at the top of the phone (not EXIF) for the time.
+- Find the DATE only if a date is actually visible (map/playback date label, flight-date row, timeline header, lock-screen date). NEVER guess a date from the filename. If no date is legible, return null.
+Return ONLY a JSON object — no prose, no markdown.
 Schema:
 {
-  "registration": "<N-number, uppercase, or null>",
+  "shot_type": "<fr24|adsbx|welltory|other>",
+  "registration": "<N-number of the SELECTED aircraft, uppercase, or null if masked/absent>",
   "icao_hex": "<6-char hex lowercase, or null>",
   "operator": "<owner/operator string, or null>",
-  "aircraft_type": "<type/model, or null>",
+  "aircraft_type": "<type/model, e.g. C172S, or null>",
   "altitude_ft": <integer or null>,
   "groundspeed_kts": <integer or null>,
+  "masked": <true if the selected contact has no registration/callsign shown, else false>,
+  "map_labels": ["<every label visible on the map, incl. 'No call sign'>"],
+  "contact_count": <integer count of aircraft contacts visible, or null>,
   "status_bar_time": "<HH:MM 24h or null>",
   "status_bar_period": "<AM|PM or null>",
-  "capture_date": "<YYYY-MM-DD read from the radar/map date block, playback date label, or flight-date text visible in the screenshot; null if no date is visible>",
-  "capture_date_source": "<short description of where the date was read, e.g. 'map date label', 'playback bar', or null>",
+  "capture_date": "<YYYY-MM-DD visible in the image; null if not visible>",
+  "capture_date_source": "<where the date was read, e.g. 'map date label', or null>",
   "departure_airport": "<IATA/ICAO or null>",
   "map_area": "<area/county/city visible on map or null>",
-  "notes": "<short note about other aircraft visible, flight-path shape/color, or null>"
+  "notes": "<flight-path shape (orbit/loop/transit), other contacts, anything forensically relevant>"
 }`;
+
 
     async function tryLovable(): Promise<string> {
       if (!lovableKey) throw new Error("LOVABLE_API_KEY missing");

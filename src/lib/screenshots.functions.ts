@@ -130,8 +130,20 @@ Schema:
       const end = cleaned.lastIndexOf("}");
       const jsonStr = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
       const parsed = JSON.parse(jsonStr) as Partial<VisionExtract>;
+      const reg = parsed.registration ? String(parsed.registration).toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+      const labels = Array.isArray(parsed.map_labels)
+        ? parsed.map_labels.map((l) => String(l).trim()).filter(Boolean).slice(0, 40)
+        : [];
       const norm: VisionExtract = {
-        registration: parsed.registration ? String(parsed.registration).toUpperCase().replace(/[^A-Z0-9]/g, "") : null,
+        shot_type: parsed.shot_type ? String(parsed.shot_type).toLowerCase() : null,
+        masked: parsed.masked === true || (!reg && (labels.length > 0 || parsed.aircraft_type != null || parsed.altitude_ft != null)),
+        map_labels: labels,
+        contact_count:
+          typeof parsed.contact_count === "number"
+            ? Math.max(0, Math.round(parsed.contact_count))
+            : labels.length || null,
+        registration: reg && reg !== "NA" ? reg : null,
+
         icao_hex: parsed.icao_hex ? String(parsed.icao_hex).toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 6) : null,
         operator: parsed.operator ?? null,
         aircraft_type: parsed.aircraft_type ?? null,

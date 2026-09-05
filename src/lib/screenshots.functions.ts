@@ -410,8 +410,13 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       icao_hex: string | null;
       status_bar_local: string | null;
       tz_offset_min: number | null;
+      masked: boolean | null;
+      map_labels: string[] | null;
+      aircraft_type: string | null;
+      altitude_ft: number | null;
     }>(
-      `SELECT id, exif_taken_at, tail, icao_hex, status_bar_local, tz_offset_min
+      `SELECT id, exif_taken_at, tail, icao_hex, status_bar_local, tz_offset_min,
+              masked, map_labels, aircraft_type, altitude_ft
        FROM radar_screenshots WHERE id = $1`,
       [data.id],
     );
@@ -437,12 +442,57 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       if (r[0]?.n_number) tail = `N${r[0].n_number}`;
     }
 
+    // Tails visible on the map, even when the SELECTED contact is masked.
+    const labelTails = (shot.map_labels ?? [])
+      .map((l) => String(l).toUpperCase().replace(/[^A-Z0-9]/g, ""))
+      .filter((l) => /^N[0-9][0-9A-Z]{1,4}$/.test(l));
+
+    // ---------- UNIDENTIFIED PATH ----------
+    // The selected contact has no registration. That is a MASKED contact, not an absent
+    // aircraft. We correlate on time (and on any tails visible on the map) and bind it
+    // to a class — we never call it a phantom.
     if (!tail && !icao) {
-      await q(
-        `UPDATE radar_screenshots SET match_status='NO_AIRCRAFT', match_count=0, match_window_s=$2, match_method=NULL WHERE id=$1`,
-        [shot.id, win],
+      if (!shot.exif_taken_at) {
+        await q(
+          `UPDATE radar_screenshots SET match_status='NEEDS_DATE', match_count=0, match_window_s=$2,
+             match_method=NULL, bind_class='NEEDS_DATE' WHERE id=$1`,
+          [shot.id, win],
+        );
+        return { matches: [] as DetectionMatch[], status: "NEEDS_DATE" as const, method: null as string | null };
+      }
+      const pu: unknown[] = [shot.exif_taken_at, win];
+      let labelPred = "";
+      if (labelTails.length) {
+        pu.push(labelTails);
+        labelPred = `AND upper(d.registration) = ANY($${pu.length})`;
+      }
+      const nearby = await q<DetectionMatch>(
+        `SELECT d.id, d.captured_at, d.icao_hex, d.registration,
+                d.altitude_ft, d.speed_kts AS groundspeed_kts, d.county,
+                d.latitude, d.longitude,
+                abs(extract(epoch from (d.captured_at - $1::timestamptz)))::int AS delta_s
+         FROM detections d
+         WHERE d.captured_at BETWEEN ($1::timestamptz - ($2 || ' seconds')::interval)
+                                 AND ($1::timestamptz + ($2 || ' seconds')::interval)
+         ${labelPred}
+         ORDER BY delta_s ASC
+         LIMIT 25`,
+        pu,
       );
-      return { matches: [] as DetectionMatch[], status: "NO_AIRCRAFT" as const, method: null as string | null };
+      const uStatus = nearby.length === 0
+        ? "UNEXPLAINED"
+        : shot.masked
+          ? "CONFIRMED_MASKED"
+          : "PRESENCE_CORRELATED";
+      const uMethod = labelTails.length ? "map_labels" : "presence";
+      await q(
+        `UPDATE radar_screenshots
+           SET match_status=$2, match_count=$3, match_window_s=$4,
+               best_match_id=$5, best_match_delta_s=$6, match_method=$7, bind_class=$2
+         WHERE id=$1`,
+        [shot.id, uStatus, nearby.length, win, nearby[0]?.id ?? null, nearby[0]?.delta_s ?? null, uMethod],
+      );
+      return { matches: nearby, status: uStatus, method: uMethod as string | null };
     }
 
     // Build aircraft predicate, including resolved icao/tail
@@ -514,20 +564,20 @@ export const matchScreenshot = createServerFn({ method: "POST" })
     const status = !hasExactDate
       ? "NEEDS_DATE"
       : matches.length === 0
-        ? "NO_MATCH"
-        : best.delta_s <= 60
-          ? "LOCKED"
-          : best.delta_s <= 300
-            ? "STRONG"
-            : "WEAK";
+        ? "UNEXPLAINED"
+        : best.delta_s <= 300
+          ? "CONFIRMED_NAMED"
+          : "PRESENCE_CORRELATED";
     await q(
       `UPDATE radar_screenshots
          SET match_status=$2, match_count=$3, match_window_s=$4,
              best_match_id=$5, best_match_delta_s=$6, match_method=$7,
+             bind_class=$2,
              tail = COALESCE(tail, $8), icao_hex = COALESCE(icao_hex, $9)
        WHERE id=$1`,
       [shot.id, status, matches.length, win, best?.id ?? null, best?.delta_s ?? null, method, tail, icao],
     );
+
     return { matches, status, method };
   });
 

@@ -212,6 +212,15 @@ async function ensureSchema() {
         );
         ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS status_bar_local text;
         ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS match_method text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS masked boolean NOT NULL DEFAULT false;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS map_labels text[];
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS contact_count int;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS shot_type text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_source text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_confidence text;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_conflict boolean NOT NULL DEFAULT false;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS time_signals jsonb;
+        ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS bind_class text;
         CREATE INDEX IF NOT EXISTS radar_screenshots_uploaded_idx ON radar_screenshots(uploaded_at DESC);
         CREATE INDEX IF NOT EXISTS radar_screenshots_tail_idx ON radar_screenshots(tail);
         CREATE INDEX IF NOT EXISTS radar_screenshots_icao_idx ON radar_screenshots(icao_hex);
@@ -245,7 +254,16 @@ export type RadarScreenshot = {
   match_status: string;
   status_bar_local: string | null;
   match_method: string | null;
+  masked: boolean;
+  map_labels: string[] | null;
+  contact_count: number | null;
+  shot_type: string | null;
+  time_source: string | null;
+  time_confidence: string | null;
+  time_conflict: boolean;
+  bind_class: string | null;
 };
+
 
 export type DetectionMatch = {
   id: string;

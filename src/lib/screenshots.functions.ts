@@ -299,6 +299,14 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
       notes?: string | null;
       source?: string;
       status_bar_local?: string | null;
+      masked?: boolean | null;
+      map_labels?: string[] | null;
+      contact_count?: number | null;
+      shot_type?: string | null;
+      time_source?: string | null;
+      time_confidence?: string | null;
+      time_conflict?: boolean | null;
+      time_signals?: Record<string, unknown> | null;
     }) => d,
   )
   .handler(async ({ data }) => {
@@ -313,8 +321,11 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
         (source, filename, file_size, sha256, image_data, mime_type,
          exif_taken_at, tz_offset_min, raw_exif,
          tail, icao_hex, operator, aircraft_type,
-         altitude_ft, groundspeed_kts, notes, status_bar_local)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         altitude_ft, groundspeed_kts, notes, status_bar_local,
+         masked, map_labels, contact_count, shot_type,
+         time_source, time_confidence, time_conflict, time_signals)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+               $18,$19,$20,$21,$22,$23,$24,$25)
        RETURNING id`,
       [
         data.source ?? "flightradar24",
@@ -334,6 +345,14 @@ export const uploadScreenshot = createServerFn({ method: "POST" })
         data.groundspeed_kts ?? null,
         data.notes ?? null,
         data.status_bar_local ?? null,
+        data.masked ?? false,
+        data.map_labels ?? null,
+        data.contact_count ?? null,
+        data.shot_type ?? null,
+        data.time_source ?? null,
+        data.time_confidence ?? null,
+        data.time_conflict ?? false,
+        data.time_signals ? JSON.stringify(data.time_signals) : null,
       ],
     );
     return { id: rows[0].id, duplicate: false as const };
@@ -349,7 +368,8 @@ export const listScreenshots = createServerFn({ method: "GET" })
     let where = "";
     if (data.search && data.search.trim()) {
       params.push(`%${data.search.trim()}%`);
-      where = `WHERE tail ILIKE $2 OR icao_hex ILIKE $2 OR operator ILIKE $2 OR filename ILIKE $2`;
+      where = `WHERE tail ILIKE $2 OR icao_hex ILIKE $2 OR operator ILIKE $2 OR filename ILIKE $2
+               OR array_to_string(COALESCE(map_labels,'{}'), ',') ILIKE $2`;
     }
     return q<RadarScreenshot>(
       `SELECT id, uploaded_at, source, filename, file_size, sha256,
@@ -357,7 +377,9 @@ export const listScreenshots = createServerFn({ method: "GET" })
               exif_taken_at, tz_offset_min, tail, icao_hex, operator, aircraft_type,
               altitude_ft, groundspeed_kts, notes,
               match_count, match_window_s, best_match_delta_s, match_status,
-              status_bar_local, match_method
+              status_bar_local, match_method,
+              masked, map_labels, contact_count, shot_type,
+              time_source, time_confidence, time_conflict, bind_class
        FROM radar_screenshots
        ${where}
        ORDER BY uploaded_at DESC
@@ -365,6 +387,7 @@ export const listScreenshots = createServerFn({ method: "GET" })
       params,
     );
   });
+
 
 // ---------- Match against detections ----------
 // Strategy:

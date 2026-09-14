@@ -34,6 +34,7 @@ const kpisOpts = queryOptions({
   queryKey: ["kpis"],
   queryFn: () => getKpis(),
   refetchInterval: 30_000,
+  retry: 2,
 });
 
 export const Route = createFileRoute("/")({
@@ -43,7 +44,9 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "Live operations dashboard for the Watchtower advocacy command center." },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(kpisOpts),
+  // No loader: the KPI rollup fans out into ~18 Neon queries, and a cold-wake
+  // can push SSR past the platform's response deadline — blank page. Render the
+  // shell instantly and let the client fetch with loading state + retry.
   component: Command,
   errorComponent: ({ error, reset }) => (
     <LoadErrorPanel error={error} reset={reset} title="Command center didn't load" />
@@ -51,7 +54,17 @@ export const Route = createFileRoute("/")({
 });
 
 function Command() {
-  const { data: k } = useSuspenseQuery(kpisOpts);
+  const { data: k, isPending, error, refetch } = useQuery(kpisOpts);
+  if (isPending) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center text-xs uppercase tracking-widest text-muted-foreground">
+        Syncing command telemetry…
+      </div>
+    );
+  }
+  if (error || !k) {
+    return <LoadErrorPanel error={error} reset={() => void refetch()} title="Command center didn't load" autoRetry={false} />;
+  }
   const alerts = useQuery({
     queryKey: ["recent-alerts", 15],
     queryFn: () => getRecentAlerts({ data: { limit: 15 } }),

@@ -54,7 +54,17 @@ export const Route = createFileRoute("/")({
 });
 
 function Command() {
-  const { data: k } = useSuspenseQuery(kpisOpts);
+  const { data: k, isPending, error, refetch } = useQuery(kpisOpts);
+  if (isPending) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center text-xs uppercase tracking-widest text-muted-foreground">
+        Syncing command telemetry…
+      </div>
+    );
+  }
+  if (error || !k) {
+    return <LoadErrorPanel error={error} reset={() => void refetch()} title="Command center didn't load" autoRetry={false} />;
+  }
   const alerts = useQuery({
     queryKey: ["recent-alerts", 15],
     queryFn: () => getRecentAlerts({ data: { limit: 15 } }),

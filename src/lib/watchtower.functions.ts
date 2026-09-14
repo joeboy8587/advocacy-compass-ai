@@ -48,62 +48,121 @@ export type Kpis = {
 export const getKpis = createServerFn({ method: "GET" }).handler(async () => {
   // No silent-zero fallback: this is an operational dashboard. If Neon is
   // unreachable, throw so the UI shows a real error with retry, not fake
-  // zeros that look like "no violations". One retry handles cold-wake.
+  // zeros that look like "no violations".
+  //
+  // Performance: the old single mega-query re-computed MAX(captured_at) on the
+  // huge `detections` table inside every subquery and took minutes — long enough
+  // to hang the whole dashboard behind the per-query timeout. Now we fetch each
+  // table's latest timestamp once (fast MAX), then run the anchored counts as
+  // small independent queries in parallel with the cutoff passed as a parameter.
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const rows = await q<Kpis>(`
-        WITH
-          ml_max AS (SELECT MAX(detected_at) AS t FROM ml_anomaly_detections),
-          ae_max AS (SELECT MAX(detected_at) AS t FROM anomaly_events),
-          ens_max AS (SELECT MAX(scored_at) AS t FROM ensemble_anomaly_scores),
-          vc_max AS (SELECT MAX(captured_at) AS t FROM violation_classifications),
-          inc_max AS (SELECT MAX(event_timestamp) AS t FROM incursion_events),
-          det_max AS (SELECT MAX(captured_at) AS t FROM detections),
-          ens_agg AS (
-            SELECT count(*)::int AS n,
-                   count(*) FILTER (WHERE ensemble_score >= 0.65)::int AS hi,
-                   count(*) FILTER (WHERE disagreement >= 0.3)::int AS dis,
-                   count(*) FILTER (WHERE validated IS NOT TRUE)::int AS unv
-              FROM ensemble_anomaly_scores
-             WHERE scored_at > (SELECT t FROM ens_max) - interval '24 hours'
-          ),
-          ae_agg AS (
-            SELECT count(*) FILTER (WHERE anomaly_type IN ('SPOOFING_SIGNAL','CROSS_FEED_INCONSISTENCY_SPOOFING','HEX_CASE_SPOOF','HEX_CASE_SPOOF_INJECTION','GNSS_INS_SPOOFING_INNOVATION_SPIKE'))::int AS spoof,
-                   count(*) FILTER (WHERE anomaly_type IN ('MASKED_ALTITUDE','SUSTAINED_MASKING','GHOST_VECTOR_UNMASKED'))::int AS masked,
-                   count(*) FILTER (WHERE anomaly_type IN ('IMPOSSIBLE_PHYSICS','KINEMATIC_ANOMALY','SUB_STALL'))::int AS physics
-              FROM anomaly_events
-             WHERE detected_at > (SELECT t FROM ae_max) - interval '24 hours'
-          )
-        SELECT
-          (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS detections_24h,
-          (SELECT count(*)::int FROM anomaly_events WHERE detected_at > now() - interval '24 hours') AS anomalies_24h,
-          (SELECT count(*)::int FROM aoi_alerts WHERE captured_at > now() - interval '24 hours' AND alert_level = 'CRITICAL') AS critical_alerts_24h,
-          (SELECT count(*)::int FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN','CONFIRMED')) AS active_cases,
-          (SELECT count(*)::int FROM violation_classifications WHERE captured_at > (SELECT t FROM vc_max) - interval '7 days') AS violations_7d,
-          (SELECT count(*)::int FROM convergence_events WHERE detected_at > now() - interval '24 hours') AS convergences_24h,
-          (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours') AS unique_aircraft_24h,
-          (SELECT count(*)::int FROM detections WHERE captured_at > (SELECT t FROM det_max) - interval '24 hours' AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false) AS low_alt_24h,
-          (SELECT spoof FROM ae_agg) AS spoofing_24h,
-          (SELECT masked FROM ae_agg) AS masked_alt_24h,
-          (SELECT physics FROM ae_agg) AS impossible_physics_24h,
-          (SELECT count(*)::int FROM wtpr_convergent_locks WHERE machine_confirmed = true) AS coordination_locks,
-          (SELECT count(*)::int FROM incursion_events WHERE event_timestamp > (SELECT t FROM inc_max) - interval '7 days') AS incursions_7d,
-          (SELECT n FROM ens_agg) AS ensemble_scored_24h,
-          (SELECT hi FROM ens_agg) AS ensemble_high_24h,
-          (SELECT dis FROM ens_agg) AS ensemble_disagree_24h,
-          (SELECT unv FROM ens_agg) AS ensemble_unvalidated_24h,
-          EXTRACT(EPOCH FROM (now() - (SELECT t FROM ae_max))) / 3600 AS ml_anomaly_age_hours,
-          EXTRACT(EPOCH FROM (now() - (SELECT t FROM ml_max))) / 3600 AS legacy_ml_age_hours,
-          EXTRACT(EPOCH FROM (now() - (SELECT t FROM ens_max))) / 3600 AS ensemble_age_hours,
-          EXTRACT(EPOCH FROM (now() - (SELECT t FROM vc_max))) / 3600 AS violations_age_hours,
-          EXTRACT(EPOCH FROM (now() - (SELECT t FROM inc_max))) / 3600 AS incursions_age_hours,
-          EXTRACT(EPOCH FROM (now() - (SELECT t FROM det_max))) / 3600 AS detections_age_hours,
-          24 AS spoofing_window_hours,
-          7 AS violations_window_days,
-          7 AS incursions_window_days
-      `);
-      return rows[0];
+      type MaxRow = { t: string | Date | null };
+      const maxOf = async (table: string, col: string) =>
+        (await q<MaxRow>(`SELECT MAX(${col}) AS t FROM ${table}`))[0]?.t ?? null;
+
+      const [mlMax, aeMax, ensMax, vcMax, incMax, detMax] = await Promise.all([
+        maxOf("ml_anomaly_detections", "detected_at"),
+        maxOf("anomaly_events", "detected_at"),
+        maxOf("ensemble_anomaly_scores", "scored_at"),
+        maxOf("violation_classifications", "captured_at"),
+        maxOf("incursion_events", "event_timestamp"),
+        maxOf("detections", "captured_at"),
+      ]);
+
+      const hoursSince = (t: string | Date | null) =>
+        t == null ? null : (Date.now() - new Date(t).getTime()) / 3_600_000;
+      const minus = (t: string | Date | null, ms: number) =>
+        t == null ? null : new Date(new Date(t).getTime() - ms).toISOString();
+      const DAY = 86_400_000;
+
+      const detCut = minus(detMax, DAY);
+      const aeCut = minus(aeMax, DAY);
+      const ensCut = minus(ensMax, DAY);
+      const vcCut = minus(vcMax, 7 * DAY);
+      const incCut = minus(incMax, 7 * DAY);
+
+      const one = async (sql: string, params: unknown[] = []) => {
+        const rows = await q<{ n: number }>(sql, params);
+        return rows[0]?.n ?? 0;
+      };
+
+      const [
+        detections_24h,
+        anomalies_24h,
+        critical_alerts_24h,
+        active_cases,
+        violations_7d,
+        convergences_24h,
+        unique_aircraft_24h,
+        low_alt_24h,
+        spoofRows,
+        coordination_locks,
+        incursions_7d,
+        ensRows,
+      ] = await Promise.all([
+        detCut ? one(`SELECT count(*)::int AS n FROM detections WHERE captured_at > $1`, [detCut]) : 0,
+        one(`SELECT count(*)::int AS n FROM anomaly_events WHERE detected_at > now() - interval '24 hours'`),
+        one(`SELECT count(*)::int AS n FROM aoi_alerts WHERE captured_at > now() - interval '24 hours' AND alert_level = 'CRITICAL'`),
+        one(`SELECT count(*)::int AS n FROM cases WHERE status IN ('DRAFT','REVIEW','OPEN','CONFIRMED')`),
+        vcCut ? one(`SELECT count(*)::int AS n FROM violation_classifications WHERE captured_at > $1`, [vcCut]) : 0,
+        one(`SELECT count(*)::int AS n FROM convergence_events WHERE detected_at > now() - interval '24 hours'`),
+        detCut ? one(`SELECT count(DISTINCT icao_hex)::int AS n FROM detections WHERE captured_at > $1`, [detCut]) : 0,
+        detCut
+          ? one(`SELECT count(*)::int AS n FROM detections WHERE captured_at > $1 AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground = false`, [detCut])
+          : 0,
+        aeCut
+          ? q<{ spoof: number; masked: number; physics: number }>(`
+              SELECT count(*) FILTER (WHERE anomaly_type IN ('SPOOFING_SIGNAL','CROSS_FEED_INCONSISTENCY_SPOOFING','HEX_CASE_SPOOF','HEX_CASE_SPOOF_INJECTION','GNSS_INS_SPOOFING_INNOVATION_SPIKE'))::int AS spoof,
+                     count(*) FILTER (WHERE anomaly_type IN ('MASKED_ALTITUDE','SUSTAINED_MASKING','GHOST_VECTOR_UNMASKED'))::int AS masked,
+                     count(*) FILTER (WHERE anomaly_type IN ('IMPOSSIBLE_PHYSICS','KINEMATIC_ANOMALY','SUB_STALL'))::int AS physics
+                FROM anomaly_events WHERE detected_at > $1`, [aeCut])
+          : Promise.resolve([{ spoof: 0, masked: 0, physics: 0 }]),
+        one(`SELECT count(*)::int AS n FROM wtpr_convergent_locks WHERE machine_confirmed = true`),
+        incCut ? one(`SELECT count(*)::int AS n FROM incursion_events WHERE event_timestamp > $1`, [incCut]) : 0,
+        ensCut
+          ? q<{ n: number; hi: number; dis: number; unv: number }>(`
+              SELECT count(*)::int AS n,
+                     count(*) FILTER (WHERE ensemble_score >= 0.65)::int AS hi,
+                     count(*) FILTER (WHERE disagreement >= 0.3)::int AS dis,
+                     count(*) FILTER (WHERE validated IS NOT TRUE)::int AS unv
+                FROM ensemble_anomaly_scores WHERE scored_at > $1`, [ensCut])
+          : Promise.resolve([{ n: 0, hi: 0, dis: 0, unv: 0 }]),
+      ]);
+
+      const spoof = spoofRows[0] ?? { spoof: 0, masked: 0, physics: 0 };
+      const ens = ensRows[0] ?? { n: 0, hi: 0, dis: 0, unv: 0 };
+
+      const kpis: Kpis = {
+        detections_24h,
+        anomalies_24h,
+        critical_alerts_24h,
+        active_cases,
+        violations_7d,
+        convergences_24h,
+        unique_aircraft_24h,
+        low_alt_24h,
+        spoofing_24h: spoof.spoof,
+        masked_alt_24h: spoof.masked,
+        impossible_physics_24h: spoof.physics,
+        coordination_locks,
+        incursions_7d,
+        ensemble_scored_24h: ens.n,
+        ensemble_high_24h: ens.hi,
+        ensemble_disagree_24h: ens.dis,
+        ensemble_unvalidated_24h: ens.unv,
+        ml_anomaly_age_hours: hoursSince(aeMax),
+        legacy_ml_age_hours: hoursSince(mlMax),
+        ensemble_age_hours: hoursSince(ensMax),
+        violations_age_hours: hoursSince(vcMax),
+        incursions_age_hours: hoursSince(incMax),
+        detections_age_hours: hoursSince(detMax),
+        spoofing_window_hours: 24,
+        violations_window_days: 7,
+        incursions_window_days: 7,
+      };
+      return kpis;
     } catch (error) {
       lastErr = error;
       const msg = error instanceof Error ? error.message : String(error);

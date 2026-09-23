@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Globe2, Loader2, Network, X, Plane, Building2, FolderOpen, Radar } from "lucide-react";
+import { Globe2, Loader2, Network, X, Plane, Building2, FolderOpen, Radar, Paperclip } from "lucide-react";
+import { toast } from "sonner";
 import {
   getAirspaceMap,
   getEntityGraph,
@@ -12,6 +13,9 @@ import {
 } from "@/lib/intel-map.functions";
 import { LoadErrorPanel } from "@/components/LoadErrorPanel";
 import { ExportBar } from "@/components/ExportBar";
+import { Button } from "@/components/ui/button";
+import { attachAircraftToCase } from "@/lib/casework.functions";
+import { getCases } from "@/lib/watchtower.functions";
 
 export const Route = createFileRoute("/map")({
   head: () => ({
@@ -79,7 +83,10 @@ function MapPage() {
 
   const dossier = useQuery({
     queryKey: ["intel-map-dossier", selected],
-    queryFn: () => getNodeDossier({ data: { icao: selected! } }),
+    queryFn: () => {
+      if (!selected) throw new Error("Select an aircraft first");
+      return getNodeDossier({ data: { icao: selected } });
+    },
     enabled: Boolean(selected),
   });
 
@@ -105,31 +112,37 @@ function MapPage() {
       <div className="no-print flex flex-wrap items-center gap-2">
         <div className="flex rounded-sm overflow-hidden border border-border">
           {(["airspace", "network"] as const).map((v) => (
-            <button
+            <Button
               key={v}
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setView(v)}
-              className={`px-3 py-1.5 text-[11px] uppercase tracking-widest flex items-center gap-2 ${
+              className={`rounded-none text-[11px] uppercase tracking-widest ${
                 view === v ? "bg-accent/20 text-accent" : "text-muted-foreground hover:bg-card"
               }`}
             >
               {v === "airspace" ? <Radar className="size-3" /> : <Network className="size-3" />} {v}
-            </button>
+            </Button>
           ))}
         </div>
 
         {FILTERS.map((f) => (
-          <button
+          <Button
             key={f.key}
+            type="button"
+            variant="outline"
+            size="sm"
             title={f.hint}
             onClick={() => setFilter(f.key)}
-            className={`px-3 py-1.5 text-[11px] uppercase tracking-widest rounded-sm border ${
+            className={`text-[11px] uppercase tracking-widest rounded-sm ${
               filter === f.key
                 ? "border-accent text-accent bg-accent/10"
                 : "border-border text-muted-foreground hover:bg-card"
             }`}
           >
             {f.label}
-          </button>
+          </Button>
         ))}
 
         <select
@@ -145,12 +158,15 @@ function MapPage() {
         </select>
 
         {focus && view === "network" && (
-          <button
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setFocus(null)}
-            className="px-3 py-1.5 text-[11px] uppercase tracking-widest rounded-sm border border-primary text-primary"
+            className="text-[11px] uppercase tracking-widest rounded-sm border-primary text-primary"
           >
             Clear focus ✕
-          </button>
+          </Button>
         )}
       </div>
 
@@ -162,7 +178,7 @@ function MapPage() {
             ) : air.isError ? (
               <LoadErrorPanel error={air.error} reset={() => air.refetch()} title="Airspace unavailable" />
             ) : (
-              <AirspaceView data={air.data!} selected={selected} onSelect={setSelected} />
+              air.data ? <AirspaceView data={air.data} selected={selected} onSelect={setSelected} /> : null
             )
           ) : graph.isLoading ? (
             <Loading text="Mapping the network…" />
@@ -181,6 +197,7 @@ function MapPage() {
           {selected ? (
             <Inspector
               loading={dossier.isLoading}
+              error={dossier.error}
               data={dossier.data}
               onClose={() => setSelected(null)}
               onFocus={(icao) => {
@@ -265,14 +282,14 @@ function AirspaceView({
   const radiusPx = (km: number) => Math.max(4, (km / kmPerDegLon / (box.max_lon - box.min_lon)) * W);
 
   const colorFor = (c: MapContact) =>
-    c.kcso ? "#ff7a1a" : c.masked ? "#ff3b6b" : c.low_alt ? "#ffd166" : "#39ff88";
+    c.kcso ? "var(--primary)" : c.masked ? "var(--destructive)" : c.low_alt ? "var(--chart-3)" : "var(--accent)";
 
   return (
     <div className="space-y-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto rounded-sm bg-[#05070a]">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto rounded-sm bg-background" aria-label="Aircraft tracks and convergence zones">
         <defs>
           <pattern id="grid" width="45" height="45" patternUnits="userSpaceOnUse">
-            <path d="M 45 0 L 0 0 0 45" fill="none" stroke="#12331f" strokeWidth="0.6" />
+            <path d="M 45 0 L 0 0 0 45" fill="none" stroke="var(--border)" strokeWidth="0.6" />
           </pattern>
         </defs>
         <rect width={W} height={H} fill="url(#grid)" />
@@ -288,14 +305,15 @@ function AirspaceView({
                 cx={x}
                 cy={y}
                 r={radiusPx(z.radius_km)}
-                fill={isConv ? "rgba(255,122,26,0.09)" : "rgba(57,255,136,0.05)"}
-                stroke={isConv ? "#ff7a1a" : "#39ff88"}
+                fill={isConv ? "var(--primary)" : "var(--accent)"}
+                fillOpacity={isConv ? 0.09 : 0.05}
+                stroke={isConv ? "var(--primary)" : "var(--accent)"}
                 strokeOpacity={0.45}
                 strokeDasharray={isConv ? "4 3" : "1 4"}
                 strokeWidth={1}
               />
               {!isConv && (
-                <text x={x} y={y - radiusPx(z.radius_km) - 4} fill="#5c7a68" fontSize="9" textAnchor="middle">
+                <text x={x} y={y - radiusPx(z.radius_km) - 4} fill="var(--muted-foreground)" fontSize="9" textAnchor="middle">
                   {z.name}
                 </text>
               )}
@@ -356,11 +374,11 @@ function AirspaceView({
 // -------------------------------------------------------------------- network
 
 const KIND_COLOR: Record<GraphNode["kind"], string> = {
-  aircraft: "#39ff88",
-  owner: "#ff7a1a",
-  shell: "#c06bff",
-  case: "#ff3b6b",
-  county: "#56b7ff",
+  aircraft: "var(--accent)",
+  owner: "var(--primary)",
+  shell: "var(--neon-magenta)",
+  case: "var(--destructive)",
+  county: "var(--neon-cyan)",
 };
 
 function NetworkView({
@@ -413,14 +431,14 @@ function NetworkView({
 
   return (
     <div className="space-y-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto rounded-sm bg-[#05070a]">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto rounded-sm bg-background" aria-label="Aircraft, owner, corporate and case connections">
         {edges.map((e, i) => {
           const a = positions.get(e.source);
           const b = positions.get(e.target);
           if (!a || !b) return null;
           const lit = hover === e.source || hover === e.target;
           const stroke =
-            e.kind === "co_flew" ? "#39ff88" : e.kind === "evidence_in" ? "#ff3b6b" : e.kind === "corporate" ? "#c06bff" : "#ff7a1a";
+            e.kind === "co_flew" ? "var(--accent)" : e.kind === "evidence_in" ? "var(--destructive)" : e.kind === "corporate" ? "var(--neon-magenta)" : "var(--primary)";
           return (
             <line
               key={i}
@@ -453,7 +471,7 @@ function NetworkView({
               <text
                 x={p.x + r + 4}
                 y={p.y + 3}
-                fill={hover === n.id ? c : "#7c8f85"}
+                fill={hover === n.id ? c : "var(--muted-foreground)"}
                 fontSize={hover === n.id ? 11 : 9}
               >
                 {n.label.length > 26 ? `${n.label.slice(0, 24)}…` : n.label}
@@ -475,26 +493,49 @@ function NetworkView({
 
 function Inspector({
   loading,
+  error,
   data,
   onClose,
   onFocus,
   onTwin,
 }: {
   loading: boolean;
+  error: Error | null;
   data?: Awaited<ReturnType<typeof getNodeDossier>>;
   onClose: () => void;
   onFocus: (icao: string) => void;
   onTwin: (icao: string) => void;
 }) {
+  const queryClient = useQueryClient();
+  const [caseId, setCaseId] = useState("");
+  const cases = useQuery({
+    queryKey: ["cases", "map-attach"],
+    queryFn: () => getCases({ data: { limit: 200 } }),
+    enabled: Boolean(data),
+  });
+  const attach = useMutation({
+    mutationFn: async () => {
+      if (!data || !caseId) throw new Error("Choose a case first");
+      const result = await attachAircraftToCase({ data: { caseId, identifiers: [data.icao_hex], days: 30 } });
+      if (!result.ok) throw new Error(result.error ?? "No matching detections were found");
+      return result;
+    },
+    onSuccess: (result) => {
+      toast.success(`${result.attached.toLocaleString()} detections attached to ${caseId}`);
+      void queryClient.invalidateQueries({ queryKey: ["case", caseId] });
+    },
+    onError: (attachError) => toast.error(attachError instanceof Error ? attachError.message : "Could not attach aircraft"),
+  });
+
   return (
     <div className="panel p-4 space-y-3">
       <div className="flex items-start justify-between gap-2">
         <div className="text-sm neon-text-orange flex items-center gap-2">
           <Plane className="size-4" /> {data?.registration ?? data?.icao_hex?.toUpperCase() ?? "Loading"}
         </div>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+        <Button type="button" variant="ghost" size="icon" onClick={onClose} className="size-7 text-muted-foreground hover:text-foreground" aria-label="Close aircraft file">
           <X className="size-4" />
-        </button>
+        </Button>
       </div>
 
       {loading && (
@@ -502,6 +543,8 @@ function Inspector({
           <Loader2 className="size-3 animate-spin" /> Pulling the file…
         </div>
       )}
+
+      {error && <LoadErrorPanel error={error} title="Aircraft file unavailable" />}
 
       {data && (
         <div className="space-y-3 text-xs">
@@ -546,9 +589,9 @@ function Inspector({
               <ul className="space-y-1">
                 {data.cases.map((c) => (
                   <li key={c.case_id} className="flex items-center justify-between">
-                    <a href={`/cases/${c.case_id}`} className="text-accent hover:underline">
+                    <Link to="/cases/$caseId" params={{ caseId: c.case_id }} className="text-accent hover:underline">
                       {c.case_id}
-                    </a>
+                    </Link>
                     <span className="text-[10px] uppercase text-muted-foreground">
                       {c.severity ?? "—"} · {c.status ?? "—"}
                     </span>
@@ -569,9 +612,9 @@ function Inspector({
               <ul className="space-y-1">
                 {data.twins.slice(0, 6).map((t) => (
                   <li key={t.icao_hex} className="flex items-center justify-between gap-2">
-                    <button onClick={() => onTwin(t.icao_hex)} className="text-accent hover:underline truncate">
+                    <Button type="button" variant="link" size="sm" onClick={() => onTwin(t.icao_hex)} className="h-auto p-0 text-accent truncate">
                       {t.registration ?? t.icao_hex.toUpperCase()}
-                    </button>
+                    </Button>
                     <span className="text-[10px] text-muted-foreground shrink-0">
                       {Math.round(Number(t.similarity) * 100)}% alike
                     </span>
@@ -581,12 +624,43 @@ function Inspector({
             </div>
           )}
 
-          <button
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => onFocus(data.icao_hex)}
-            className="w-full px-3 py-2 text-[11px] uppercase tracking-widest border border-accent text-accent rounded-sm hover:bg-accent/10"
+            className="w-full text-[11px] uppercase tracking-widest border-accent text-accent rounded-sm hover:bg-accent/10"
           >
             Show this aircraft's network
-          </button>
+          </Button>
+
+          <div className="border-t border-border pt-3 space-y-2">
+            <label htmlFor="map-case" className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1">
+              <Paperclip className="size-3" /> Add the last 30 days to a case
+            </label>
+            <select
+              id="map-case"
+              value={caseId}
+              onChange={(event) => setCaseId(event.target.value)}
+              className="w-full bg-card border border-border rounded-sm px-2 py-2 text-[11px]"
+            >
+              <option value="">Choose a case…</option>
+              {cases.data?.filter((item) => item.status !== "DISMISSED").map((item) => (
+                <option key={item.id} value={item.case_id ?? item.id}>
+                  {item.case_id ?? item.id.slice(0, 8)} · {item.subject_reg ?? item.subject_icao ?? item.subject_owner ?? "Unknown subject"}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              className="w-full text-[11px] uppercase tracking-widest"
+              disabled={!caseId || attach.isPending}
+              onClick={() => attach.mutate()}
+            >
+              {attach.isPending ? <Loader2 className="animate-spin" /> : <Paperclip />} Attach aircraft evidence
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -608,23 +682,23 @@ function Legend({ view }: { view: "airspace" | "network" }) {
   const items =
     view === "airspace"
       ? [
-          { c: "#ff7a1a", t: "Sheriff's office aircraft" },
-          { c: "#ff3b6b", t: "No registration broadcast" },
-          { c: "#ffd166", t: "Dropped below 500 ft" },
-          { c: "#39ff88", t: "Everything else" },
+          { c: "bg-primary", t: "Sheriff's office aircraft" },
+          { c: "bg-destructive", t: "No registration broadcast" },
+          { c: "bg-neon-cyan", t: "Dropped below 500 ft" },
+          { c: "bg-accent", t: "Everything else" },
         ]
       : [
-          { c: "#39ff88", t: "Aircraft" },
-          { c: "#ff7a1a", t: "Registered owner" },
-          { c: "#c06bff", t: "Corporate filing" },
-          { c: "#ff3b6b", t: "Case file" },
+          { c: "bg-accent", t: "Aircraft" },
+          { c: "bg-primary", t: "Registered owner" },
+          { c: "bg-neon-magenta", t: "Corporate filing" },
+          { c: "bg-destructive", t: "Case file" },
         ];
   return (
     <div className="panel p-3 space-y-1.5">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Legend</div>
       {items.map((i) => (
         <div key={i.t} className="flex items-center gap-2 text-xs">
-          <span className="size-2.5 rounded-full" style={{ background: i.c }} />
+          <span className={`size-2.5 rounded-full ${i.c}`} />
           <span className="text-muted-foreground">{i.t}</span>
         </div>
       ))}

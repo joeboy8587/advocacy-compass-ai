@@ -349,7 +349,8 @@ export const getEntityGraph = createServerFn({ method: "GET" })
         if (!nodes.has(oid)) {
           nodes.set(oid, { id: oid, label: owner, kind: "owner", detail: "registered owner", weight: 1, flagged: Boolean(p?.kcso_flag) });
         } else {
-          nodes.get(oid)!.weight += 1;
+          const ownerNode = nodes.get(oid);
+          if (ownerNode) ownerNode.weight += 1;
         }
         edges.push({ source: `ac:${key}`, target: oid, kind: "registered_to", label: "registered to", weight: 1 });
       }

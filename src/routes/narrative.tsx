@@ -12,7 +12,7 @@ import {
 export const Route = createFileRoute("/narrative")({
   head: () => ({
     meta: [
-      { title: "Daily Narrative // Watchtower" },
+      { title: "Kern County Daily Narrative // Watchtower" },
       { name: "description", content: "Auto-generated daily interpretation of Watchtower detections, anomalies, offenders, and legal hooks." },
     ],
   }),
@@ -213,10 +213,10 @@ function NarrativePage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Newspaper className="size-5 text-accent" />
-            <h1 className="text-xl font-bold neon-text-orange">Daily Narrative</h1>
+            <h1 className="text-xl font-bold neon-text-orange">Kern County Daily Narrative</h1>
           </div>
           <p className="text-xs text-muted-foreground max-w-xl">
-            Auto-generated once per UTC day. Interprets raw detections, anomalies, repeat offenders,
+            Kern County airspace only. Auto-generated once per UTC day. Interprets raw detections, anomalies, repeat offenders,
             and CFR hooks into analyst-tone prose. Stored in Neon with SHA-256 fingerprint. Rolling 14-day view.
           </p>
         </div>

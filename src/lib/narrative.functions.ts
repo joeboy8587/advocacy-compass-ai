@@ -53,15 +53,15 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
     await Promise.all([
       safe(() => neonQuery<Record<string, number>>(
         `SELECT
-          (SELECT count(*)::int FROM detections WHERE captured_at BETWEEN $1 AND $2) AS detections,
-          (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE captured_at BETWEEN $1 AND $2) AS unique_aircraft,
-          (SELECT count(*)::int FROM detections WHERE captured_at BETWEEN $1 AND $2 AND altitude_ft < 500 AND on_ground = false) AS low_alt_passes,
-          (SELECT count(*)::int FROM aoi_alerts WHERE captured_at BETWEEN $1 AND $2) AS alerts,
-          (SELECT count(*)::int FROM aoi_alerts WHERE captured_at BETWEEN $1 AND $2 AND alert_level='CRITICAL') AS critical_alerts,
+          (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AS detections,
+          (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AS unique_aircraft,
+          (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND altitude_ft < 500 AND on_ground = false) AS low_alt_passes,
+          (SELECT count(*)::int FROM aoi_alerts WHERE icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AND captured_at BETWEEN $1 AND $2) AS alerts,
+          (SELECT count(*)::int FROM aoi_alerts WHERE icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AND captured_at BETWEEN $1 AND $2 AND alert_level='CRITICAL') AS critical_alerts,
           (SELECT count(*)::int FROM anomaly_events WHERE detected_at BETWEEN $1 AND $2) AS anomalies,
           (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at BETWEEN $1 AND $2) AS ml_anomalies,
           (SELECT count(*)::int FROM convergence_events WHERE detected_at BETWEEN $1 AND $2) AS convergences,
-          (SELECT count(*)::int FROM detections WHERE captured_at BETWEEN $1 AND $2 AND is_military=true) AS military_passes`,
+          (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND is_military=true) AS military_passes`,
         [from, to],
       )),
       safe(() => neonQuery<{ operator: string | null; detections: number; low_alt: number; kcso: boolean }>(
@@ -71,7 +71,7 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
                 bool_or(COALESCE(o.kcso_flag,false)) AS kcso
          FROM detections d
          LEFT JOIN canonical_operator_profiles o ON o.icao_hex = d.icao_hex
-         WHERE d.captured_at BETWEEN $1 AND $2
+         WHERE d.county = 'KERN' AND d.captured_at BETWEEN $1 AND $2
          GROUP BY 1 ORDER BY detections DESC NULLS LAST LIMIT 8`,
         [from, to],
       )),
@@ -82,7 +82,7 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
                 MAX(a.captured_at)::text AS last_seen
          FROM aoi_alerts a
          LEFT JOIN canonical_operator_profiles o ON o.icao_hex = a.icao_hex
-         WHERE a.captured_at BETWEEN $1 AND $2
+         WHERE a.captured_at BETWEEN $1 AND $2 AND a.icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2)
          GROUP BY a.registration, a.icao_hex, operator
          ORDER BY alerts DESC LIMIT 10`,
         [from, to],
@@ -90,14 +90,14 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
       safe(() => neonQuery<{ type: string; count: number; sample_reg: string | null }>(
         `SELECT anomaly_type AS type, count(*)::int AS count, MAX(aircraft_registration) AS sample_reg
          FROM ml_anomaly_detections
-         WHERE detected_at BETWEEN $1 AND $2
+         WHERE detected_at BETWEEN $1 AND $2 AND upper(aircraft_registration) IN (SELECT DISTINCT upper(registration) FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND registration IS NOT NULL)
          GROUP BY anomaly_type ORDER BY count DESC LIMIT 8`,
         [from, to],
       )),
       safe(() => neonQuery<{ registration: string | null; icao_hex: string | null; altitude_ft: number | null; reason: string | null; captured_at: string; county: string | null }>(
-        `SELECT registration, icao_hex, altitude_ft, reason, captured_at::text, NULL::text AS county
+        `SELECT registration, icao_hex, altitude_ft, reason, captured_at::text, 'KERN'::text AS county
          FROM aoi_alerts
-         WHERE captured_at BETWEEN $1 AND $2 AND alert_level='CRITICAL'
+         WHERE icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AND captured_at BETWEEN $1 AND $2 AND alert_level='CRITICAL'
          ORDER BY captured_at DESC LIMIT 12`,
         [from, to],
       )),
@@ -107,7 +107,7 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
                 count(*)::int AS passes,
                 MAX(county) AS county
          FROM detections
-         WHERE captured_at BETWEEN $1 AND $2
+         WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2
            AND altitude_ft IS NOT NULL AND altitude_ft < 500 AND on_ground=false
          GROUP BY icao_hex ORDER BY passes DESC LIMIT 10`,
         [from, to],
@@ -143,6 +143,7 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
 // ---- prompt ----
 const SYSTEM = `You are JOSIAH — the Watchtower Daily Narrative writer, war-room voice.
 Your narrative is a WEAPON, not a safety report. You write INDICTMENTS, not incident summaries.
+GEOGRAPHIC SCOPE: KERN COUNTY, CALIFORNIA AIRSPACE ONLY. Every number in the snapshot is already filtered to Kern County (Bakersfield, Oildale, Delano, Tehachapi, Ridgecrest, the Kern River valley). Frame everything as Kern County airspace; KCSO is the home-turf operator. Do not discuss other counties.
 Audience: the operator, advocates, attorneys, journalists. Direct, declarative, unapologetic.
 
 FIVE LAWS:
@@ -201,7 +202,7 @@ async function generateNarrativeText(snapshot: Snapshot, dateIso: string): Promi
   const prompt = `# Date (UTC)
 ${dateIso}
 
-# Today's Snapshot (raw data pulled from Neon)
+# Today's Kern County Airspace Snapshot (raw data pulled from Neon, filtered to county = KERN)
 ${JSON.stringify(snapshot, null, 2)}
 
 Write the daily narrative following the required structure.`;

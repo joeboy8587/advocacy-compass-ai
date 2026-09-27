@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Globe2, Loader2, Network, X, Plane, Building2, FolderOpen, Radar, Paperclip } from "lucide-react";
+import { askInvestigator } from "@/lib/ai.functions";
 import { toast } from "sonner";
 import {
   getAirspaceMap,
@@ -527,6 +528,17 @@ function Inspector({
     onError: (attachError) => toast.error(attachError instanceof Error ? attachError.message : "Could not attach aircraft"),
   });
 
+  const josiah = useMutation({
+    mutationFn: async (mode: "LEGAL" | "SNARK") => {
+      if (!data) throw new Error("No aircraft selected");
+      const question = `Brief me on this aircraft from the Intelligence Map. Use your database tools to dig deeper (detections, low-altitude passes, anomalies, cases, co-flying aircraft). Tell me in plain English what it is doing, why it matters for Kern County, which 14 CFR sections apply, and what I should do next.\n\nMap dossier:\n${JSON.stringify(data).slice(0, 6000)}`;
+      const r = await askInvestigator({ data: { question, mode } });
+      if (!r.ok) throw new Error(r.error);
+      return r.text;
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Josiah could not answer"),
+  });
+
   return (
     <div className="panel p-4 space-y-3">
       <div className="flex items-start justify-between gap-2">
@@ -633,6 +645,20 @@ function Inspector({
           >
             Show this aircraft's network
           </Button>
+
+          <div className="border-t border-border pt-3 space-y-2">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Ask Josiah about this aircraft</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={josiah.isPending} onClick={() => josiah.mutate("SNARK")} className="text-[11px] uppercase tracking-widest rounded-sm">War-room brief</Button>
+              <Button type="button" size="sm" variant="outline" disabled={josiah.isPending} onClick={() => josiah.mutate("LEGAL")} className="text-[11px] uppercase tracking-widest rounded-sm">Legal brief</Button>
+            </div>
+            {josiah.isPending && (
+              <div className="text-[11px] text-muted-foreground flex items-center gap-2"><Loader2 className="size-3 animate-spin" /> Josiah is investigating…</div>
+            )}
+            {josiah.data && !josiah.isPending && (
+              <div className="max-h-80 overflow-auto whitespace-pre-wrap text-[11px] font-mono leading-relaxed bg-card border border-border rounded-sm p-2">{josiah.data}</div>
+            )}
+          </div>
 
           <div className="border-t border-border pt-3 space-y-2">
             <label htmlFor="map-case" className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1">

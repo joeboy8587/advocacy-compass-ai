@@ -58,8 +58,8 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
           (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND altitude_ft < 500 AND on_ground = false) AS low_alt_passes,
           (SELECT count(*)::int FROM aoi_alerts WHERE icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AND captured_at BETWEEN $1 AND $2) AS alerts,
           (SELECT count(*)::int FROM aoi_alerts WHERE icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AND captured_at BETWEEN $1 AND $2 AND alert_level='CRITICAL') AS critical_alerts,
-          (SELECT count(*)::int FROM anomaly_events WHERE detected_at BETWEEN $1 AND $2) AS anomalies,
-          (SELECT count(*)::int FROM ml_anomaly_detections WHERE detected_at BETWEEN $1 AND $2) AS ml_anomalies,
+         (SELECT count(*)::int FROM anomaly_events WHERE upper(county) = 'KERN' AND detected_at BETWEEN $1 AND $2) AS anomalies,
+         (SELECT count(*)::int FROM anomaly_events WHERE upper(county) = 'KERN' AND detected_at BETWEEN $1 AND $2 AND anomaly_type LIKE '%SPOOF%') AS ml_anomalies,
           (SELECT count(*)::int FROM convergence_events WHERE detected_at BETWEEN $1 AND $2) AS convergences,
           (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND is_military=true) AS military_passes`,
         [from, to],
@@ -88,10 +88,11 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
         [from, to],
       )),
       safe(() => neonQuery<{ type: string; count: number; sample_reg: string | null }>(
-        `SELECT anomaly_type AS type, count(*)::int AS count, MAX(aircraft_registration) AS sample_reg
-         FROM ml_anomaly_detections
-         WHERE detected_at BETWEEN $1 AND $2 AND upper(aircraft_registration) IN (SELECT DISTINCT upper(registration) FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND registration IS NOT NULL)
-         GROUP BY anomaly_type ORDER BY count DESC LIMIT 8`,
+        `SELECT anomaly_type AS type, count(*)::int AS count,
+                mode() WITHIN GROUP (ORDER BY COALESCE(registration, icao_hex)) AS sample_reg
+         FROM anomaly_events
+         WHERE detected_at BETWEEN $1 AND $2 AND upper(county) = 'KERN'
+         GROUP BY anomaly_type ORDER BY count DESC LIMIT 12`,
         [from, to],
       )),
       safe(() => neonQuery<{ registration: string | null; icao_hex: string | null; altitude_ft: number | null; reason: string | null; captured_at: string; county: string | null }>(
@@ -208,10 +209,18 @@ ${JSON.stringify(snapshot, null, 2)}
 Write the daily narrative following the required structure.`;
   const { text, provider } = await generateTextWithFallback({
     model: MODEL,
-    system: SYSTEM,
+    system: SYSTEM + "\n\nOUTPUT ONLY THE FINAL NARRATIVE in markdown, starting with the first '## ' heading. Never include planning, reasoning, or notes to yourself.",
     prompt,
   });
-  return { text, provider };
+  return { text: stripReasoning(text), provider };
+}
+
+// Some models leak their planning before the answer. Keep only the narrative itself.
+function stripReasoning(raw: string): string {
+  let t = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const idx = t.search(/^##\s/m);
+  if (idx > 0) t = t.slice(idx);
+  return t.trim();
 }
 
 // ---- read ----

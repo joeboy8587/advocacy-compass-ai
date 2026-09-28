@@ -113,7 +113,7 @@ function MarkdownNarrative({ md }: { md: string }) {
 
 function fmtDate(iso: string) {
   const d = new Date(`${iso}T00:00:00Z`);
-  return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 }
 
 function timeAgo(iso: string) {
@@ -193,14 +193,14 @@ function NarrativePage() {
   // Auto-generate today's narrative on first visit each UTC day (idempotent)
   useEffect(() => {
     if (!listQuery.data) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
     const hasToday = listQuery.data.some((r) => r.narrative_date === today);
     if (!hasToday && !ensure.isPending) ensure.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listQuery.data]);
 
   const rows = listQuery.data ?? [];
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
   const todayRow = rows.find((r) => r.narrative_date === todayIso);
   const generating = ensure.isPending || regen.isPending;
   const errorMsg =
@@ -216,7 +216,7 @@ function NarrativePage() {
             <h1 className="text-xl font-bold neon-text-orange">Kern County Daily Narrative</h1>
           </div>
           <p className="text-xs text-muted-foreground max-w-xl">
-            Kern County airspace only. Auto-generated once per UTC day. Interprets raw detections, anomalies, repeat offenders,
+            Kern County airspace only. Auto-generated once per Pacific-time day. Interprets raw detections, anomalies, repeat offenders,
             and CFR hooks into analyst-tone prose. Stored in Neon with SHA-256 fingerprint. Rolling 14-day view.
           </p>
         </div>

@@ -23,7 +23,8 @@ async function ensureTable() {
 }
 
 function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Kern County local day (Pacific time)
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
 }
 
 // ---- snapshot gatherer ----
@@ -42,8 +43,8 @@ type Snapshot = {
 
 async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
   const { neonQuery } = await import("./neon.server");
-  const from = `${dateIso} 00:00:00+00`;
-  const to = `${dateIso} 23:59:59+00`;
+  const from = `${dateIso} 00:00:00 America/Los_Angeles`;
+  const to = `${dateIso} 23:59:59 America/Los_Angeles`;
 
   const safe = async <T>(fn: () => Promise<T[]>): Promise<T[]> => {
     try { return await fn(); } catch (e) { console.warn("[narrative] gather failed:", (e as Error).message); return []; }

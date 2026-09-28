@@ -66,23 +66,25 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
         [from, to],
       )),
       safe(() => neonQuery<{ operator: string | null; detections: number; low_alt: number; kcso: boolean }>(
-        `SELECT COALESCE(o.operator_resolved, o.faa_registrant_name) AS operator,
+        `SELECT COALESCE(o.operator_resolved, o.faa_registrant_name, fm.name) AS operator,
                 count(*)::int AS detections,
                 count(*) FILTER (WHERE d.altitude_ft < 500 AND d.on_ground = false)::int AS low_alt,
                 bool_or(COALESCE(o.kcso_flag,false)) AS kcso
          FROM detections d
          LEFT JOIN canonical_operator_profiles o ON o.icao_hex = d.icao_hex
+         LEFT JOIN LATERAL (SELECT name FROM faa_master f WHERE f.mode_s_code_hex = upper(d.icao_hex) LIMIT 1) fm ON true
          WHERE d.county = 'KERN' AND d.captured_at BETWEEN $1 AND $2
          GROUP BY 1 ORDER BY detections DESC NULLS LAST LIMIT 8`,
         [from, to],
       )),
       safe(() => neonQuery<{ registration: string | null; icao_hex: string; operator: string | null; alerts: number; last_seen: string }>(
         `SELECT a.registration, a.icao_hex,
-                COALESCE(o.operator_resolved, o.faa_registrant_name) AS operator,
+                COALESCE(o.operator_resolved, o.faa_registrant_name, fm.name) AS operator,
                 count(*)::int AS alerts,
                 MAX(a.captured_at)::text AS last_seen
          FROM aoi_alerts a
          LEFT JOIN canonical_operator_profiles o ON o.icao_hex = a.icao_hex
+         LEFT JOIN LATERAL (SELECT name FROM faa_master f WHERE f.mode_s_code_hex = upper(a.icao_hex) LIMIT 1) fm ON true
          WHERE a.captured_at BETWEEN $1 AND $2 AND a.icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2)
          GROUP BY a.registration, a.icao_hex, operator
          ORDER BY alerts DESC LIMIT 10`,

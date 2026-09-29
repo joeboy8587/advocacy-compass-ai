@@ -439,7 +439,15 @@ function summariseReasoning(raw: string | null): string | null {
 
 
   const bits: string[] = [];
-  if (typeof j.alt_ft === "number") bits.push(`about ${Math.round(j.alt_ft).toLocaleString()} ft up`);
+  if (typeof j.alt_ft === "number") {
+    // A negative broadcast height is itself the finding, not a typo — say so
+    // plainly instead of printing "-325 ft up".
+    bits.push(
+      j.alt_ft < 0
+        ? `broadcasting a height below ground level (${Math.round(j.alt_ft).toLocaleString()} ft)`
+        : `about ${Math.round(j.alt_ft).toLocaleString()} ft up`,
+    );
+  }
   if (typeof j.speed_kts === "number") bits.push(`${Math.round(j.speed_kts)} knots`);
   if (typeof j.county === "string") bits.push(`over ${String(j.county).toLowerCase()} county`);
 

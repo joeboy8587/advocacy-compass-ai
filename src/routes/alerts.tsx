@@ -160,6 +160,9 @@ function Alerts() {
         <ExportBar rows={rows as unknown as Array<Record<string, unknown>>} fileName="alerts" note="csv = rows shown · print = full page" />
       </header>
 
+      <CirclingNow />
+
+
       <div className="panel scanline overflow-x-auto">
         <table className="w-full text-xs min-w-[1100px]">
           <thead className="text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary/40">

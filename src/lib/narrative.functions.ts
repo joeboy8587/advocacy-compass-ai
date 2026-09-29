@@ -203,12 +203,15 @@ RULES:
 
 async function generateNarrativeText(snapshot: Snapshot, dateIso: string): Promise<{ text: string; provider: string }> {
   const { generateTextWithFallback } = await import("./ai-fallback.server");
+  const { fetchInvestigatorMemory } = await import("./intelligence.functions");
+  const memory = await fetchInvestigatorMemory(20).catch(() => "");
+
   const prompt = `# Date (UTC)
 ${dateIso}
 
 # Today's Kern County Airspace Snapshot (raw data pulled from Neon, filtered to county = KERN)
 ${JSON.stringify(snapshot, null, 2)}
-
+${memory ? `\n# Investigator Memory (binding — never contradict a verdict below)\n${memory}\n` : ""}
 Write the daily narrative following the required structure.`;
   const { text, provider } = await generateTextWithFallback({
     model: MODEL,

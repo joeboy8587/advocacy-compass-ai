@@ -218,6 +218,9 @@ export const draftCaseBrief = createServerFn({ method: "POST" })
     const cfg = audienceMap[data.audience];
     const system = `${BASE_IDENTITY}\n\n${cfg.mode === "LEGAL" ? LEGAL_MODE : SNARK_MODE}`;
 
+    const { fetchInvestigatorMemory } = await import("./intelligence.functions");
+    const memory = await fetchInvestigatorMemory().catch(() => "");
+
     try {
       const { generateTextWithFallback } = await import("./ai-fallback.server");
       const { text, provider } = await generateTextWithFallback({
@@ -233,7 +236,7 @@ ${JSON.stringify(dets, null, 2)}
 
 ## Prior FAA Rule Violations by this Aircraft
 ${JSON.stringify(vios, null, 2)}
-
+${memory ? `\n## Investigator Memory (binding)\n${memory}\n` : ""}
 Follow the output structure required by your mode.`,
       });
       return { ok: true as const, text, mode: cfg.mode, provider };

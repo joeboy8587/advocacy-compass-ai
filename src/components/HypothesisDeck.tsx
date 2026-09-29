@@ -213,7 +213,12 @@ function LeadCard({
   const [showNote, setShowNote] = useState(false);
 
   const vote = useMutation({
+    // Pressing the verdict you already chose takes it back.
     mutationFn: async (verdict: Verdict) => {
+      if (lead.verdict === verdict) {
+        await clearLeadVerdict({ data: { itemKind: lead.item_kind, itemKey: lead.item_key } });
+        return null;
+      }
       await recordLeadVerdict({
         data: {
           itemKind: lead.item_kind,
@@ -230,11 +235,13 @@ function LeadCard({
     },
     onSuccess: (verdict) => {
       toast.success(
-        verdict === "CONFIRMED"
-          ? "Marked confirmed. Josiah will treat it as established."
-          : verdict === "NOT_USEFUL"
-            ? "Ruled out. Josiah will stop raising it."
-            : "Flagged for review.",
+        verdict === null
+          ? "Decision taken back. This is an open lead again."
+          : verdict === "CONFIRMED"
+            ? "Marked confirmed. Josiah will treat it as established."
+            : verdict === "NOT_USEFUL"
+              ? "Ruled out. Josiah will stop raising it."
+              : "Flagged for review.",
       );
       onSaved();
     },

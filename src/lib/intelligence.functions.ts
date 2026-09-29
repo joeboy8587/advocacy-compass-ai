@@ -422,31 +422,49 @@ async function loadDeck(
 // mission_hypotheses.reasoning_chain is a JSON blob. Pull only the human-readable bits.
 function summariseReasoning(raw: string | null): string | null {
   if (!raw) return null;
+  const trimmed = raw.trim();
+
+  // Plain sentence already — use it as-is.
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return trimmed.slice(0, 240);
+
+  let j: Record<string, unknown>;
   try {
-    const j = JSON.parse(raw) as Record<string, unknown>;
-    const bits: string[] = [];
-    if (typeof j.alt_ft === "number") bits.push(`about ${Math.round(j.alt_ft).toLocaleString()} ft up`);
-    if (typeof j.speed_kts === "number") bits.push(`${Math.round(j.speed_kts)} knots`);
-    if (typeof j.county === "string") bits.push(`over ${String(j.county).toLowerCase()} county`);
-    const nulls = j.null_tests as Record<string, string> | undefined;
-    const rejected = nulls
-      ? Object.values(nulls).filter((v) => typeof v === "string" && v.startsWith("REJECTED"))
-      : [];
-    const survived = nulls
-      ? Object.values(nulls).filter((v) => typeof v === "string" && v.startsWith("SURVIVED"))
-      : [];
-    let out = bits.length ? `Typical example: ${bits.join(", ")}.` : "";
-    if (rejected.length) {
-      out += ` Innocent explanations ruled out: ${rejected
-        .map((r) => r.replace(/^REJECTED\s*[—-]\s*/u, ""))
-        .slice(0, 2)
-        .join("; ")}.`;
-    }
-    if (survived.length) out += ` ${survived.length} innocent explanation(s) still stand.`;
-    return out.trim() || null;
+    j = JSON.parse(trimmed) as Record<string, unknown>;
   } catch {
-    return raw.slice(0, 220);
+    return null;
   }
+
+  const bits: string[] = [];
+  if (typeof j.alt_ft === "number") bits.push(`about ${Math.round(j.alt_ft).toLocaleString()} ft up`);
+  if (typeof j.speed_kts === "number") bits.push(`${Math.round(j.speed_kts)} knots`);
+  if (typeof j.county === "string") bits.push(`over ${String(j.county).toLowerCase()} county`);
+
+  const nulls = j.null_tests as Record<string, string> | undefined;
+  const values = nulls ? Object.values(nulls).filter((v) => typeof v === "string") : [];
+  const rejected = values.filter((v) => v.startsWith("REJECTED"));
+  const survived = values.filter((v) => v.startsWith("SURVIVED"));
+
+  let out = bits.length ? `Typical example: ${bits.join(", ")}.` : "";
+  if (rejected.length) {
+    out += ` Innocent explanations ruled out: ${rejected
+      .map((r) => r.replace(/^REJECTED\s*[—-]\s*/u, "").trim())
+      .slice(0, 2)
+      .join("; ")}.`;
+  }
+  if (survived.length) out += ` ${survived.length} innocent explanation${survived.length === 1 ? "" : "s"} still stand.`;
+
+  // Fall back to any human-readable sentence buried in the blob rather than
+  // showing the operator raw JSON.
+  if (!out.trim()) {
+    const sentence = Object.values(j).find(
+      (v) => typeof v === "string" && v.length > 20 && /\s/.test(v) && !v.startsWith("{"),
+    );
+    if (typeof sentence === "string") {
+      out = sentence.replace(/^REJECTED\s*[—-]\s*/u, "").trim();
+    }
+  }
+
+  return out.trim().slice(0, 300) || null;
 }
 
 // ------------------------------------------------------------ server funcs

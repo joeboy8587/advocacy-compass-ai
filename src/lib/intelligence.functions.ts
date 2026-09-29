@@ -377,6 +377,9 @@ async function loadDeck(icaosRaw: string[], label: string, caseId?: string): Pro
   }
 
   for (const s of shellRows) {
+    // Skip self-matches: a sheriff's office aircraft flying "beside itself" is
+    // an artefact of the pairing table, not a lead.
+    if (selfRegs.has((s.kcso_registration ?? "").trim().toUpperCase())) continue;
     push({
       item_kind: "shell_alignment",
       item_key: `shell:${primary}:${s.kcso_registration}`,
@@ -387,12 +390,13 @@ async function loadDeck(icaosRaw: string[], label: string, caseId?: string): Pro
       rule: null,
       events: s.n,
       confidence: null,
-      strength: strength(0, s.n),
+      strength: strength(null, s.n),
       latest: s.latest,
       detail: s.closest ? `Closest recorded approach: ${Number(s.closest).toFixed(2)} km.` : null,
       partner_icao: null,
     });
   }
+
 
   const order = { STRONG: 0, MODERATE: 1, WEAK: 2 } as const;
   leads.sort((a, b) => order[a.strength] - order[b.strength] || b.events - a.events);

@@ -275,7 +275,9 @@ function LeadCard({
       )}
 
       {lead.verdict && (
-        <div className="text-[10px] uppercase tracking-widest text-accent">{VERDICT_WORD[lead.verdict]}</div>
+        <div className="text-[10px] uppercase tracking-widest text-accent">
+          {VERDICT_WORD[lead.verdict]} · press the same button again to take it back
+        </div>
       )}
 
       {showNote && (

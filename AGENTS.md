@@ -17,3 +17,4 @@
 
 ## Research-derived detectors
 - Orbit / impossible-movement / identity-swap checks live in `src/lib/detection-upgrades.server.ts`, computed live from `detections` (anchored to MAX(captured_at)) and surfaced via the Hypothesis Deck kinds `orbit`/`kinematic`/`idswap` — why: each lead cites its published method, and live queries run in ~2s so no cache table is needed.
+- Signal-layer check (`signalFor`, deck kind `signal`) compares FIRST_PARTY_RTL_SDR positions to same-5-second `adsb_icao` feed positions plus `soda_phy_fingerprints` ghost flags — why: raw_hex holds only the address (no full frames/I-Q), so our own antenna is the only independent signal witness; antenna/feed gaps stay WEAK because they are currently systemic.

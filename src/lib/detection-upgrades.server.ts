@@ -133,3 +133,45 @@ export function describeOrbit(o: OrbitRow): string {
   const spd = o.speed_kts != null ? `${Math.round(o.speed_kts)} kts` : "unknown speed";
   return `On ${o.day} it circled about ${o.orbits} times over a ${o.area_km2} km² area in ${where} for ${o.minutes} minutes, at around ${alt} and ${spd}, turning ${o.steer_per_min}°/minute on average.`;
 }
+
+// Signal-layer check (Kenaudekar et al., LiU — third pillar). We have no raw I/Q,
+// but FIRST_PARTY_RTL_SDR rows are our own antenna: an independent witness to
+// compare against third-party feed positions, plus PHY ghost-injection flags.
+export type SignalRow = {
+  icao_hex: string; sdr_pings: number; feed_pings: number; pairs: number;
+  disagree: number; worst_km: number; ghost_flags: number; last_seen: string | null;
+};
+export const SIGNAL_SOURCE =
+  "Method: Kenaudekar et al., Linköping University — signal-level plausibility, checked against Watchtower's own RTL-SDR receiver as an independent witness.";
+
+export async function signalFor(icaos: string[], hours = 24 * 30) {
+  return neonQuery<SignalRow>(`
+WITH anchor AS (SELECT max(captured_at) t FROM detections),
+d AS (
+  SELECT lower(icao_hex) hex, captured_at, latitude, longitude, source_type = 'FIRST_PARTY_RTL_SDR' sdr, source_type
+    FROM detections, anchor
+   WHERE lower(icao_hex) = ANY($1::text[]) AND captured_at > anchor.t - ($2::int * interval '1 hour')
+     AND latitude IS NOT NULL
+), sb AS (
+  SELECT hex, floor(extract(epoch FROM captured_at)/5)::bigint b, avg(latitude) la, avg(longitude) lo FROM d WHERE sdr GROUP BY 1,2
+), fb AS (
+  SELECT hex, floor(extract(epoch FROM captured_at)/5)::bigint b, avg(latitude) la, avg(longitude) lo
+    FROM d WHERE source_type = 'adsb_icao' AND hex IN (SELECT DISTINCT hex FROM sb) GROUP BY 1,2
+), pr AS (
+  SELECT sb.hex, 111.0*sqrt(power(sb.la-fb.la,2)+power((sb.lo-fb.lo)*cos(radians(sb.la)),2)) km
+    FROM sb JOIN fb ON fb.hex=sb.hex AND fb.b=sb.b
+), g AS (
+  SELECT hex, count(*) FILTER (WHERE sdr)::int sdr_pings, count(*) FILTER (WHERE NOT sdr)::int feed_pings,
+         max(captured_at)::text last_seen FROM d GROUP BY 1
+), ph AS (
+  SELECT lower(ltrim(raw_hex,'~')) hex, count(*) FILTER (WHERE is_ghost_injection)::int ghost_flags
+    FROM soda_phy_fingerprints WHERE lower(ltrim(raw_hex,'~')) = ANY($1::text[]) GROUP BY 1
+)
+SELECT h.hex icao_hex, coalesce(g.sdr_pings,0) sdr_pings, coalesce(g.feed_pings,0) feed_pings,
+       (SELECT count(*)::int FROM pr WHERE pr.hex=h.hex) pairs,
+       (SELECT count(*)::int FROM pr WHERE pr.hex=h.hex AND km > 5) disagree,
+       (SELECT round(coalesce(max(km),0)::numeric,2)::float FROM pr WHERE pr.hex=h.hex) worst_km,
+       coalesce(ph.ghost_flags,0) ghost_flags, g.last_seen
+  FROM unnest($1::text[]) h(hex) LEFT JOIN g ON g.hex=h.hex LEFT JOIN ph ON ph.hex=h.hex`,
+    [icaos, hours], { timeoutMs: 18_000 }).catch(() => []);
+}

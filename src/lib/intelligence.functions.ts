@@ -150,7 +150,7 @@ function strength(confidence: number | null, events: number): "STRONG" | "MODERA
 export type Verdict = "CONFIRMED" | "REVIEW" | "NOT_USEFUL";
 
 export type DeckLead = {
-  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap";
+  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap" | "signal";
   item_key: string;
   type: string;
   title: string;
@@ -408,8 +408,9 @@ async function loadDeck(
   // Research-derived detectors (orbit / impossible movement / identity swap).
   try {
     const u = await import("./detection-upgrades.server");
-    const [orbits, kins, swaps] = await Promise.all([
+    const [orbits, sigs, kins, swaps] = await Promise.all([
       u.orbitsFor(icaos, 24 * 30, 3),
+      u.signalFor(icaos, 24 * 30),
       u.kinematicsFor(icaos, 24 * 30),
       u.idSwapsFor(icaos, 24 * 30),
     ]);
@@ -465,6 +466,26 @@ async function loadDeck(
         latest: s.at,
         detail: `${(s.old_reg ?? s.old_hex).toUpperCase()} went silent and ${(s.new_reg ?? s.new_hex).toUpperCase()} appeared ${s.gap_s} seconds later, ${s.km} km away. ${u.METHOD_SOURCES.idswap}`,
         partner_icao: other,
+      });
+    }
+    for (const g of sigs) {
+      if (g.disagree === 0 && g.ghost_flags === 0) continue;
+      const n = g.disagree + g.ghost_flags;
+      push({
+        item_kind: "signal",
+        item_key: `signal:${g.icao_hex}`,
+        type: "SIGNAL_DOES_NOT_MATCH_OUR_ANTENNA",
+        title: g.ghost_flags && !g.disagree ? "Signal looks injected (ghost track)" : "Our antenna heard it somewhere else",
+        meaning:
+          "Watchtower's own radio receiver is an independent witness. When the position other feeds report doesn't match what our antenna heard at the same moment, or the signal carries ghost-injection traits, the broadcast may be faked or relayed.",
+        rule: "14 CFR § 91.227 (ADS-B Out performance requirements)",
+        events: n,
+        confidence: null,
+        // Antenna-vs-feed gaps are currently systemic (most aircraft disagree), so they stay WEAK until clocks are aligned; ghost flags drive strength.
+        strength: g.ghost_flags > 0 && g.disagree > 0 ? "STRONG" : g.ghost_flags >= 1 ? "MODERATE" : "WEAK",
+        latest: g.last_seen,
+        detail: `Our antenna heard it ${g.sdr_pings} time(s); ${g.pairs} of those could be lined up with a direct ADS-B report from another feed within the same 5 seconds, and ${g.disagree} disagreed by more than 5 km (largest gap ${g.worst_km} km). Ghost-injection flags on its signal: ${g.ghost_flags}. Innocent explanations to rule out: a decoding glitch on our receiver or a clock drift between sources — check a few matching moments before confirming. ${u.SIGNAL_SOURCE}`,
+        partner_icao: null,
       });
     }
   } catch (e) {

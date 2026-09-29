@@ -175,3 +175,58 @@ SELECT h.hex icao_hex, coalesce(g.sdr_pings,0) sdr_pings, coalesce(g.feed_pings,
   FROM unnest($1::text[]) h(hex) LEFT JOIN g ON g.hex=h.hex LEFT JOIN ph ON ph.hex=h.hex`,
     [icaos, hours], { timeoutMs: 18_000 }).catch(() => []);
 }
+
+// Frame-level check over our antenna's full radio messages (raw_messages).
+// Each Mode S frame carries a 24-bit CRC; we re-verify it, confirm the
+// address inside the frame matches the aircraft, and read emergency status.
+export type FrameRow = {
+  icao_hex: string; frames: number; crc_bad: number; addr_mismatch: number;
+  emergencies: number; emergency_code: string | null; id_frames: number; pos_frames: number;
+  first_seen: string | null; last_seen: string | null;
+};
+export const FRAME_SOURCE =
+  "Method: Kenaudekar et al., Linköping University — frame-level checks on Watchtower's own receiver (Mode S CRC-24, embedded address, emergency status). Raw-message archive currently covers Sep 15–16, 2026 only.";
+
+const CRC_POLY = 0xfff409;
+function crcOk(hex: string): boolean {
+  const bits = hex.length * 4;
+  if (bits !== 112 && bits !== 56) return false;
+  const bytes = hex.match(/../g)!.map((b) => parseInt(b, 16));
+  let crc = 0;
+  for (let i = 0; i < bytes.length - 3; i++) {
+    crc ^= bytes[i] << 16;
+    for (let j = 0; j < 8; j++) { crc <<= 1; if (crc & 0x1000000) crc ^= CRC_POLY; }
+    crc &= 0xffffff;
+  }
+  const tail = (bytes[bytes.length - 3] << 16) | (bytes[bytes.length - 2] << 8) | bytes[bytes.length - 1];
+  return crc === tail;
+}
+const EMERG = ["none", "general emergency", "medical", "fuel", "no radio", "unlawful interference", "downed aircraft", "reserved"];
+
+export async function framesFor(icaos: string[]): Promise<FrameRow[]> {
+  const rows = await neonQuery<{ icao_hex: string; raw_hex: string; df: number; first_seen: string; last_seen: string }>(
+    `SELECT lower(icao_hex) icao_hex, raw_hex, df, first_seen::text, last_seen::text
+       FROM raw_messages WHERE lower(icao_hex) = ANY($1::text[]) LIMIT 20000`,
+    [icaos], { timeoutMs: 15_000 }).catch(() => []);
+  const by = new Map<string, FrameRow>();
+  for (const r of rows) {
+    let g = by.get(r.icao_hex);
+    if (!g) { g = { icao_hex: r.icao_hex, frames: 0, crc_bad: 0, addr_mismatch: 0, emergencies: 0, emergency_code: null, id_frames: 0, pos_frames: 0, first_seen: r.first_seen, last_seen: r.last_seen }; by.set(r.icao_hex, g); }
+    g.frames++;
+    if (r.first_seen < (g.first_seen ?? r.first_seen)) g.first_seen = r.first_seen;
+    if (r.last_seen > (g.last_seen ?? "")) g.last_seen = r.last_seen;
+    const hex = (r.raw_hex ?? "").replace(/[^0-9a-f]/gi, "");
+    if (r.df === 17 || r.df === 18) {
+      if (!crcOk(hex)) g.crc_bad++;
+      if (hex.slice(2, 8).toLowerCase() !== r.icao_hex) g.addr_mismatch++;
+      const tc = parseInt(hex.slice(8, 10), 16) >> 3;
+      if (tc >= 1 && tc <= 4) g.id_frames++;
+      if ((tc >= 9 && tc <= 18) || (tc >= 20 && tc <= 22)) g.pos_frames++;
+      if (tc === 28 && (parseInt(hex.slice(8, 10), 16) & 7) === 1) {
+        const st = parseInt(hex.slice(10, 11), 16) >> 1;
+        if (st > 0) { g.emergencies++; g.emergency_code = EMERG[st]; }
+      }
+    }
+  }
+  return [...by.values()];
+}

@@ -409,9 +409,9 @@ async function loadDeck(
   try {
     const u = await import("./detection-upgrades.server");
     const [orbits, kins, swaps] = await Promise.all([
-      u.orbitsFor(icaos, 24 * 7, 3),
-      u.kinematicsFor(icaos),
-      u.idSwapsFor(icaos),
+      u.orbitsFor(icaos, 24 * 30, 3),
+      u.kinematicsFor(icaos, 24 * 30),
+      u.idSwapsFor(icaos, 24 * 30),
     ]);
     const o = orbits[0];
     if (o) {
@@ -445,7 +445,7 @@ async function loadDeck(
         confidence: null,
         strength: kin.jumps >= 20 ? "STRONG" : kin.jumps >= 5 ? "MODERATE" : "WEAK",
         latest: kin.last_seen,
-        detail: `${kin.jumps} jump(s) further than its reported speed allows (largest ${kin.worst_km} km) and ${kin.heading_mismatch} time(s) it moved in a different direction than it said it was pointing, over the last 7 days of data. ${u.METHOD_SOURCES.kinematic}`,
+        detail: `${kin.jumps} jump(s) further than its reported speed allows (largest ${kin.worst_km} km) and ${kin.heading_mismatch} time(s) it moved in a different direction than it said it was pointing, over the last 30 days of data. ${u.METHOD_SOURCES.kinematic}`,
         partner_icao: null,
       });
     }

@@ -424,15 +424,19 @@ function summariseReasoning(raw: string | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
 
-  // Plain sentence already — use it as-is.
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return trimmed.slice(0, 240);
+  // Records arrive either as a plain sentence, as raw JSON, or as
+  // "SOME LABEL: {json}". Operators should never be shown the JSON.
+  const brace = trimmed.indexOf("{");
+  if (brace === -1) return trimmed.slice(0, 240);
+  const lead = trimmed.slice(0, brace).replace(/[:\-—\s]+$/u, "").trim();
 
   let j: Record<string, unknown>;
   try {
-    j = JSON.parse(trimmed) as Record<string, unknown>;
+    j = JSON.parse(trimmed.slice(brace)) as Record<string, unknown>;
   } catch {
-    return null;
+    return lead ? lead.slice(0, 240) : null;
   }
+
 
   const bits: string[] = [];
   if (typeof j.alt_ft === "number") bits.push(`about ${Math.round(j.alt_ft).toLocaleString()} ft up`);

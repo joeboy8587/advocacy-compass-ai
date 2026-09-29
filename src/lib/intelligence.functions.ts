@@ -481,7 +481,8 @@ async function loadDeck(
         rule: "14 CFR § 91.227 (ADS-B Out performance requirements)",
         events: n,
         confidence: null,
-        strength: g.ghost_flags > 0 && g.disagree > 0 ? "STRONG" : (g.disagree >= 10 && g.disagree * 2 >= g.pairs) || g.ghost_flags >= 3 ? "MODERATE" : "WEAK",
+        // Antenna-vs-feed gaps are currently systemic (most aircraft disagree), so they stay WEAK until clocks are aligned; ghost flags drive strength.
+        strength: g.ghost_flags > 0 && g.disagree > 0 ? "STRONG" : g.ghost_flags >= 1 ? "MODERATE" : "WEAK",
         latest: g.last_seen,
         detail: `Our antenna heard it ${g.sdr_pings} time(s); ${g.pairs} of those could be lined up with a direct ADS-B report from another feed within the same 5 seconds, and ${g.disagree} disagreed by more than 5 km (largest gap ${g.worst_km} km). Ghost-injection flags on its signal: ${g.ghost_flags}. Innocent explanations to rule out: a decoding glitch on our receiver or a clock drift between sources — check a few matching moments before confirming. ${u.SIGNAL_SOURCE}`,
         partner_icao: null,

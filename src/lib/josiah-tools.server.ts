@@ -155,7 +155,33 @@ export async function runJosiahTool(name: string, args: Record<string, unknown>)
       }
       case "aircraft_dossier": {
         const id = String(args.identifier ?? "").trim();
-        const [stats, vios, anomalies] = await Promise.all([
+        const bare = id.replace(/^[Nn]/, "");
+        const [registry, stats, vios, anomalies] = await Promise.all([
+          neonQuery<Record<string, unknown>>(
+            `SELECT m.registration,
+                    m.n_number,
+                    m.mode_s_code_hex,
+                    m.name        AS faa_title_owner,
+                    m.city        AS owner_city,
+                    m.state       AS owner_state,
+                    m.serial_number,
+                    m.year_mfr,
+                    COALESCE(al.known_operator, cop.operator_resolved) AS known_commercial_operator,
+                    al.base_airport,
+                    al.context_note AS operator_context,
+                    cop.aircraft_model
+               FROM faa_master m
+               LEFT JOIN canonical_operator_profiles cop
+                      ON lower(cop.icao_hex) = lower(m.mode_s_code_hex)
+               LEFT JOIN operator_aliases al
+                      ON upper(m.name) LIKE '%' || upper(al.registrant_pattern) || '%'
+              WHERE lower(m.mode_s_code_hex) = lower($1)
+                 OR upper(m.n_number) IN (upper($1), upper($2))
+                 OR upper(m.registration) = upper($1)
+              LIMIT 1`,
+            [id, bare],
+          ).catch(() => []),
+
           neonQuery<Record<string, unknown>>(
             `SELECT icao_hex, MAX(registration) AS registration, count(*)::int AS detections,
                     count(*) FILTER (WHERE altitude_ft < 500 AND on_ground = false)::int AS low_altitude,
@@ -180,8 +206,21 @@ export async function runJosiahTool(name: string, args: Record<string, unknown>)
             [id],
           ).catch(() => []),
         ]);
-        return { identifier: id, flight_stats: stats, violations: vios, anomalies };
+        const reg = (registry[0] ?? {}) as Record<string, unknown>;
+        return {
+          identifier: id,
+          registry: registry[0] ?? null,
+          ownership_note:
+            reg.faa_title_owner || reg.known_commercial_operator
+              ? `FAA Title Owner (legal registrant): ${reg.faa_title_owner ?? "unknown"}. Known Commercial Operator (who actually flies it): ${reg.known_commercial_operator ?? "not resolved — do not assume the title owner is the operator"}.${reg.base_airport ? ` Home base: ${reg.base_airport}.` : ""}${reg.operator_context ? ` Context: ${reg.operator_context}` : ""} Leasing/holding companies are normal in aviation finance and are NOT evidence of concealment.`
+              : null,
+
+          flight_stats: stats,
+          violations: vios,
+          anomalies,
+        };
       }
+
       default:
         return { error: `unknown tool ${name}` };
     }

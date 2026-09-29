@@ -577,6 +577,34 @@ export const recordLeadVerdict = createServerFn({ method: "POST" })
     return { ok: true as const, verdict: data.verdict };
   });
 
+/** Take a decision back: removes the review and anything Josiah remembered from it. */
+export const clearLeadVerdict = createServerFn({ method: "POST" })
+  .inputValidator((d: { itemKind: string; itemKey: string }) => {
+    if (!d?.itemKey) throw new Error("itemKey required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const rows = await neonQuery<{ item_summary: string | null }>(
+      `DELETE FROM investigator_reviews
+        WHERE item_kind = $1 AND item_key = $2
+        RETURNING item_summary`,
+      [data.itemKind, data.itemKey],
+    );
+    const summary = rows[0]?.item_summary;
+    if (summary) {
+      await neonQuery(
+        `DELETE FROM josiah_memory
+          WHERE source = 'Hypothesis Deck review'
+            AND category IN ('INVESTIGATOR_CONFIRMED','INVESTIGATOR_RULED_OUT')
+            AND content LIKE '%' || $1 || '%'`,
+        [summary.slice(0, 200)],
+      ).catch(() => undefined);
+    }
+    return { ok: true as const };
+  });
+
+
+
 export const addInvestigatorNote = createServerFn({ method: "POST" })
   .inputValidator((d: { note: string; subjectIcao?: string; subjectLabel?: string; caseId?: string }) => {
     if (!d?.note?.trim()) throw new Error("note required");

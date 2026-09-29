@@ -360,7 +360,7 @@ async function loadDeck(
       confidence: conf,
       strength: strength(conf ?? 0, r.n),
       latest: r.latest,
-      detail: r.sample,
+      detail: summariseReasoning(r.sample),
       partner_icao: r.partner,
     });
   }
@@ -379,7 +379,7 @@ async function loadDeck(
       confidence: conf,
       strength: strength(conf ?? 0, p0.n),
       latest: p0.latest,
-      detail: p0.sample,
+      detail: summariseReasoning(p0.sample),
       partner_icao: null,
     });
   }

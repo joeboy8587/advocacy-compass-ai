@@ -14,3 +14,6 @@
 - Machine-derived leads are aggregated in `src/lib/intelligence.functions.ts` and rendered only through `src/components/HypothesisDeck.tsx` — why: one roll-up keeps millions of `learned_patterns` / `mission_hypotheses` rows presentable as a handful of reviewable leads.
 - Investigator verdicts live in `investigator_reviews` (unique on `item_kind,item_key`); only CONFIRMED / NOT_USEFUL propagate into `josiah_memory` — why: "needs review" is a holding state and must not bias generated briefs.
 - Every AI generation path (`askInvestigator`, case briefs, daily narrative) injects `fetchInvestigatorMemory()` as a binding prompt section — why: human verdicts must override model output everywhere, not just in chat.
+
+## Research-derived detectors
+- Orbit / impossible-movement / identity-swap checks live in `src/lib/detection-upgrades.server.ts`, computed live from `detections` (anchored to MAX(captured_at)) and surfaced via the Hypothesis Deck kinds `orbit`/`kinematic`/`idswap` — why: each lead cites its published method, and live queries run in ~2s so no cache table is needed.

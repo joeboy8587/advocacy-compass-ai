@@ -408,7 +408,7 @@ async function loadDeck(
   // Research-derived detectors (orbit / impossible movement / identity swap).
   try {
     const u = await import("./detection-upgrades.server");
-    const [orbits, kins, swaps, sigs] = await Promise.all([
+    const [orbits, sigs, kins, swaps] = await Promise.all([
       u.orbitsFor(icaos, 24 * 30, 3),
       u.signalFor(icaos, 24 * 30),
       u.kinematicsFor(icaos, 24 * 30),

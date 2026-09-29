@@ -134,9 +134,14 @@ function plainFor(kind: "hypothesis" | "pattern", type: string): Plain {
   return table[type] ?? fallbackPlain(type);
 }
 
-function strength(confidence: number, events: number): "STRONG" | "MODERATE" | "WEAK" {
-  if (confidence >= 0.7 || events >= 25) return "STRONG";
-  if (confidence >= 0.45 || events >= 5) return "MODERATE";
+// A lead is only "strong" when the machine was genuinely certain, or when the
+// same behaviour repeated so many times that volume carries it on its own.
+// Volume alone at low certainty is not strong — that was making everything
+// look urgent, which is the same as nothing looking urgent.
+function strength(confidence: number | null, events: number): "STRONG" | "MODERATE" | "WEAK" {
+  const c = confidence ?? 0;
+  if ((c >= 0.75 && events >= 3) || events >= 500) return "STRONG";
+  if (c >= 0.5 || events >= 50) return "MODERATE";
   return "WEAK";
 }
 

@@ -20,6 +20,7 @@ import {
 import { getCaseOsint, enrichCase, deepAdsbPull, archiveUrl } from "@/lib/osint.functions";
 import { IdentityResolver } from "@/components/IdentityResolver";
 import { BehaviorProfile } from "@/components/BehaviorProfile";
+import { HypothesisDeck } from "@/components/HypothesisDeck";
 
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
@@ -372,6 +373,8 @@ function InvestigateTab({ c, caseId }: { c: { subject_icao: string | null; subje
 
   return (
     <div className="space-y-4">
+      <HypothesisDeck caseId={caseId} title="What the evidence suggests in this case" />
+
       <BehaviorProfile icao={icao} />
 
       <section className="panel scanline p-5">

@@ -17,6 +17,7 @@ import { ExportBar } from "@/components/ExportBar";
 import { Button } from "@/components/ui/button";
 import { attachAircraftToCase } from "@/lib/casework.functions";
 import { getCases } from "@/lib/watchtower.functions";
+import { HypothesisDeck } from "@/components/HypothesisDeck";
 
 export const Route = createFileRoute("/map")({
   head: () => ({
@@ -197,6 +198,7 @@ function MapPage() {
         <aside className="space-y-3">
           {selected ? (
             <Inspector
+              key={selected}
               loading={dossier.isLoading}
               error={dossier.error}
               data={dossier.data}
@@ -645,6 +647,9 @@ function Inspector({
           >
             Show this aircraft's network
           </Button>
+
+          <HypothesisDeck icao={data.icao_hex} label={data.registration ?? data.icao_hex.toUpperCase()} />
+
 
           <div className="border-t border-border pt-3 space-y-2">
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Ask Josiah about this aircraft</div>

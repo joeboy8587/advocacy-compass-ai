@@ -148,7 +148,7 @@ export async function signalFor(icaos: string[], hours = 24 * 30) {
   return neonQuery<SignalRow>(`
 WITH anchor AS (SELECT max(captured_at) t FROM detections),
 d AS (
-  SELECT lower(icao_hex) hex, captured_at, latitude, longitude, source_type = 'FIRST_PARTY_RTL_SDR' sdr
+  SELECT lower(icao_hex) hex, captured_at, latitude, longitude, source_type = 'FIRST_PARTY_RTL_SDR' sdr, source_type
     FROM detections, anchor
    WHERE lower(icao_hex) = ANY($1::text[]) AND captured_at > anchor.t - ($2::int * interval '1 hour')
      AND latitude IS NOT NULL
@@ -156,7 +156,7 @@ d AS (
   SELECT hex, floor(extract(epoch FROM captured_at)/5)::bigint b, avg(latitude) la, avg(longitude) lo FROM d WHERE sdr GROUP BY 1,2
 ), fb AS (
   SELECT hex, floor(extract(epoch FROM captured_at)/5)::bigint b, avg(latitude) la, avg(longitude) lo
-    FROM d WHERE NOT sdr AND hex IN (SELECT DISTINCT hex FROM sb) GROUP BY 1,2
+    FROM d WHERE source_type = 'adsb_icao' AND hex IN (SELECT DISTINCT hex FROM sb) GROUP BY 1,2
 ), pr AS (
   SELECT sb.hex, 111.0*sqrt(power(sb.la-fb.la,2)+power((sb.lo-fb.lo)*cos(radians(sb.la)),2)) km
     FROM sb JOIN fb ON fb.hex=sb.hex AND fb.b=sb.b
@@ -169,7 +169,7 @@ d AS (
 )
 SELECT h.hex icao_hex, coalesce(g.sdr_pings,0) sdr_pings, coalesce(g.feed_pings,0) feed_pings,
        (SELECT count(*)::int FROM pr WHERE pr.hex=h.hex) pairs,
-       (SELECT count(*)::int FROM pr WHERE pr.hex=h.hex AND km > 2) disagree,
+       (SELECT count(*)::int FROM pr WHERE pr.hex=h.hex AND km > 5) disagree,
        (SELECT round(coalesce(max(km),0)::numeric,2)::float FROM pr WHERE pr.hex=h.hex) worst_km,
        coalesce(ph.ghost_flags,0) ghost_flags, g.last_seen
   FROM unnest($1::text[]) h(hex) LEFT JOIN g ON g.hex=h.hex LEFT JOIN ph ON ph.hex=h.hex`,

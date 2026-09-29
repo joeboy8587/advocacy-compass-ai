@@ -150,7 +150,7 @@ function strength(confidence: number | null, events: number): "STRONG" | "MODERA
 export type Verdict = "CONFIRMED" | "REVIEW" | "NOT_USEFUL";
 
 export type DeckLead = {
-  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment";
+  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap";
   item_key: string;
   type: string;
   title: string;

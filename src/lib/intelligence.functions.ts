@@ -188,10 +188,18 @@ export type HypothesisDeck = {
 
 // -------------------------------------------------------------- deck loader
 
-async function loadDeck(icaosRaw: string[], label: string, caseId?: string): Promise<HypothesisDeck> {
+async function loadDeck(
+  icaosRaw: string[],
+  label: string,
+  caseId?: string,
+  selfRegsRaw: string[] = [],
+): Promise<HypothesisDeck> {
   const icaos = Array.from(
     new Set(icaosRaw.map((h) => (h ?? "").trim()).filter(Boolean).map((h) => h.toLowerCase())),
   ).slice(0, 12);
+  const selfRegs = new Set(
+    [label, ...selfRegsRaw].map((r) => (r ?? "").trim().toUpperCase()).filter(Boolean),
+  );
 
   if (!icaos.length) {
     return {

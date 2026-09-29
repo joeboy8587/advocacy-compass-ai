@@ -9,6 +9,7 @@ import {
   getAircraftDeck,
   getCaseDeck,
   recordLeadVerdict,
+  clearLeadVerdict,
   type DeckLead,
   type HypothesisDeck as Deck,
   type Verdict,

@@ -150,7 +150,7 @@ function strength(confidence: number | null, events: number): "STRONG" | "MODERA
 export type Verdict = "CONFIRMED" | "REVIEW" | "NOT_USEFUL";
 
 export type DeckLead = {
-  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap" | "signal";
+  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap" | "signal" | "frames";
   item_key: string;
   type: string;
   title: string;
@@ -485,6 +485,31 @@ async function loadDeck(
         strength: g.ghost_flags > 0 && g.disagree > 0 ? "STRONG" : g.ghost_flags >= 1 ? "MODERATE" : "WEAK",
         latest: g.last_seen,
         detail: `Our antenna heard it ${g.sdr_pings} time(s); ${g.pairs} of those could be lined up with a direct ADS-B report from another feed within the same 5 seconds, and ${g.disagree} disagreed by more than 5 km (largest gap ${g.worst_km} km). Ghost-injection flags on its signal: ${g.ghost_flags}. Innocent explanations to rule out: a decoding glitch on our receiver or a clock drift between sources — check a few matching moments before confirming. ${u.SIGNAL_SOURCE}`,
+        partner_icao: null,
+      });
+    }
+    const frames = await u.framesFor(icaos);
+    for (const f of frames) {
+      const silentPos = f.frames >= 50 && f.pos_frames === 0;
+      if (!f.crc_bad && !f.addr_mismatch && !f.emergencies && !silentPos) continue;
+      const bits: string[] = [];
+      if (f.emergencies) bits.push(`it broadcast an emergency status ("${f.emergency_code}") ${f.emergencies} time(s)`);
+      if (f.crc_bad) bits.push(`${f.crc_bad} message(s) failed the built-in tamper/corruption check`);
+      if (f.addr_mismatch) bits.push(`${f.addr_mismatch} message(s) carried a different ID code inside than the one it was filed under`);
+      if (silentPos) bits.push(`it sent ${f.frames} messages but never once its position — typical of a hidden or masked track`);
+      push({
+        item_kind: "frames",
+        item_key: `frames:${f.icao_hex}`,
+        type: "RAW_RADIO_MESSAGES",
+        title: f.emergencies ? "Emergency status in its own radio messages" : f.crc_bad || f.addr_mismatch ? "Radio messages look altered" : "Broadcasting without a position",
+        meaning:
+          "These are the exact radio messages our own antenna captured, checked one by one. They can't be edited by a third-party website, so what they show is first-hand evidence.",
+        rule: "14 CFR § 91.227 (ADS-B Out performance requirements)",
+        events: f.emergencies + f.crc_bad + f.addr_mismatch + (silentPos ? 1 : 0),
+        confidence: null,
+        strength: f.addr_mismatch > 0 || f.crc_bad >= 5 ? "STRONG" : f.emergencies > 0 || silentPos ? "MODERATE" : "WEAK",
+        latest: f.last_seen,
+        detail: `Out of ${f.frames} captured messages (${f.first_seen?.slice(0, 16)} to ${f.last_seen?.slice(0, 16)} UTC), ${bits.join("; ")}. ${u.FRAME_SOURCE}`,
         partner_icao: null,
       });
     }

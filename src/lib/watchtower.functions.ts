@@ -692,21 +692,34 @@ export type OffenderRow = {
 };
 
 export const getTopOffenders = createServerFn({ method: "GET" }).handler(async () => {
-  return q<OffenderRow>(`
-    SELECT d.icao_hex,
-           MAX(d.registration) AS registration,
-           MAX(ap.registered_owner) AS owner,
-           count(*)::int AS detections_7d,
-           sum(CASE WHEN d.is_91_227_violator THEN 1 ELSE 0 END)::int AS low_alt_events,
-           string_agg(DISTINCT d.county, ', ') AS counties
-    FROM detections d
-    LEFT JOIN aircraft_profiles ap ON ap.icao_hex = d.icao_hex
-    WHERE d.captured_at > now() - interval '7 days'
-    GROUP BY d.icao_hex
-    HAVING sum(CASE WHEN d.is_91_227_violator THEN 1 ELSE 0 END) > 0
-    ORDER BY low_alt_events DESC, detections_7d DESC
-    LIMIT 25
-  `);
+  // Rank only low-altitude violators first (small set), then enrich the top 25.
+  // Scanning every detection for 7 days and joining before grouping timed out.
+  try {
+    return await q<OffenderRow>(`
+      WITH v AS (
+        SELECT d.icao_hex,
+               MAX(d.registration) AS registration,
+               count(*)::int AS low_alt_events,
+               string_agg(DISTINCT d.county, ', ') AS counties
+        FROM detections d
+        WHERE d.is_91_227_violator
+          AND d.captured_at > now() - interval '7 days'
+        GROUP BY d.icao_hex
+        ORDER BY low_alt_events DESC
+        LIMIT 25
+      )
+      SELECT v.icao_hex, v.registration,
+             (SELECT ap.registered_owner FROM aircraft_profiles ap WHERE ap.icao_hex = v.icao_hex LIMIT 1) AS owner,
+             v.low_alt_events AS detections_7d,
+             v.low_alt_events,
+             v.counties
+      FROM v
+      ORDER BY v.low_alt_events DESC
+    `);
+  } catch (e) {
+    console.error("getTopOffenders failed", e);
+    return [] as OffenderRow[];
+  }
 });
 
 // ---------- Case Mutations (Phase 2) ----------

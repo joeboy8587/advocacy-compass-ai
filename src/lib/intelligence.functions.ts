@@ -150,7 +150,7 @@ function strength(confidence: number | null, events: number): "STRONG" | "MODERA
 export type Verdict = "CONFIRMED" | "REVIEW" | "NOT_USEFUL";
 
 export type DeckLead = {
-  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment";
+  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap";
   item_key: string;
   type: string;
   title: string;
@@ -405,6 +405,71 @@ async function loadDeck(
     });
   }
 
+  // Research-derived detectors (orbit / impossible movement / identity swap).
+  try {
+    const u = await import("./detection-upgrades.server");
+    const [orbits, kins, swaps] = await Promise.all([
+      u.orbitsFor(icaos, 24 * 30, 3),
+      u.kinematicsFor(icaos, 24 * 30),
+      u.idSwapsFor(icaos, 24 * 30),
+    ]);
+    const o = orbits[0];
+    if (o) {
+      push({
+        item_kind: "orbit",
+        item_key: `orbit:${primary}:${o.day}`,
+        type: "ORBIT_SURVEILLANCE",
+        title: `Circling surveillance pattern${o.registration ? ` (${o.registration})` : ""}`,
+        meaning:
+          "Camera-carrying surveillance aircraft fly tight, constant circles over one spot so the camera stays locked on. This aircraft's turning and circling match that profile.",
+        rule: "14 CFR § 91.119 (minimum safe altitudes) where flown low over people",
+        events: orbits.length,
+        confidence: o.score,
+        strength: u.orbitStrength(o.score, o.orbits),
+        latest: o.last_seen,
+        detail: `${u.describeOrbit(o)} ${u.METHOD_SOURCES.orbit}`,
+        partner_icao: null,
+      });
+    }
+    const kin = kins.filter((k) => k.jumps + k.heading_mismatch > 0).sort((a, b) => b.jumps - a.jumps)[0];
+    if (kin) {
+      push({
+        item_kind: "kinematic",
+        item_key: `kinematic:${kin.icao_hex}`,
+        type: "POSITION_DOES_NOT_ADD_UP",
+        title: "Position doesn't add up",
+        meaning:
+          "The aircraft reported being somewhere its own speed and direction could not have taken it. This is how faked or manipulated positions give themselves away.",
+        rule: "14 CFR § 91.227 (ADS-B Out performance requirements)",
+        events: kin.jumps + kin.heading_mismatch,
+        confidence: null,
+        strength: kin.jumps >= 20 ? "STRONG" : kin.jumps >= 5 ? "MODERATE" : "WEAK",
+        latest: kin.last_seen,
+        detail: `${kin.jumps} jump(s) further than its reported speed allows (largest ${kin.worst_km} km) and ${kin.heading_mismatch} time(s) it moved in a different direction than it said it was pointing, over the last 30 days of data. ${u.METHOD_SOURCES.kinematic}`,
+        partner_icao: null,
+      });
+    }
+    for (const s of swaps.slice(0, 3)) {
+      const other = icaos.includes(s.old_hex) ? s.new_hex : s.old_hex;
+      push({
+        item_kind: "idswap",
+        item_key: `idswap:${primary}:${other}`,
+        type: "IDENTITY_SWAP",
+        title: `Possible identity switch (${other.toUpperCase()})`,
+        meaning:
+          "One ID code stopped broadcasting and a different ID code started moments later at the same spot. Surveillance operators are known to switch to temporary codes to hide their registration.",
+        rule: "14 CFR § 91.227 / § 91.215 (transponder and ADS-B identity)",
+        events: 1,
+        confidence: null,
+        strength: s.gap_s <= 30 && s.km <= 1 ? "MODERATE" : "WEAK",
+        latest: s.at,
+        detail: `${(s.old_reg ?? s.old_hex).toUpperCase()} went silent and ${(s.new_reg ?? s.new_hex).toUpperCase()} appeared ${s.gap_s} seconds later, ${s.km} km away. ${u.METHOD_SOURCES.idswap}`,
+        partner_icao: other,
+      });
+    }
+  } catch (e) {
+    console.warn("[deck] detection upgrades failed", (e as Error).message);
+  }
 
   const order = { STRONG: 0, MODERATE: 1, WEAK: 2 } as const;
   leads.sort((a, b) => order[a.strength] - order[b.strength] || b.events - a.events);

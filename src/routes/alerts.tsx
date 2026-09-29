@@ -5,6 +5,7 @@ import { getRecentAlerts, getAlertCounties } from "@/lib/watchtower.functions";
 import { z } from "zod";
 import { useMemo, useState, useEffect } from "react";
 import { ExportBar } from "@/components/ExportBar";
+import { getKernCirclingNow } from "@/lib/detection-upgrades.functions";
 
 const search = z.object({
   level: z.enum(["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional().default("ALL"),
@@ -160,6 +161,9 @@ function Alerts() {
         <ExportBar rows={rows as unknown as Array<Record<string, unknown>>} fileName="alerts" note="csv = rows shown · print = full page" />
       </header>
 
+      <CirclingNow />
+
+
       <div className="panel scanline overflow-x-auto">
         <table className="w-full text-xs min-w-[1100px]">
           <thead className="text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary/40">
@@ -241,5 +245,46 @@ function Alerts() {
         </table>
       </div>
     </div>
+  );
+}
+
+function CirclingNow() {
+  const q = useQuery({
+    queryKey: ["kern-circling"],
+    queryFn: () => getKernCirclingNow(),
+    refetchInterval: 120_000,
+  });
+  const tone = { STRONG: "text-destructive border-destructive/60", MODERATE: "text-accent border-accent/60", WEAK: "text-muted-foreground border-border" } as const;
+  const label = { STRONG: "Strong lead", MODERATE: "Worth a look", WEAK: "Weak signal" } as const;
+  return (
+    <section className="panel p-4 space-y-3">
+      <div>
+        <h2 className="text-sm uppercase tracking-widest neon-text-orange">Circling now · Kern County</h2>
+        <p className="text-xs text-muted-foreground mt-1">
+          Aircraft flying repeated tight circles over one area in the latest 24 hours of data — the flight pattern camera-carrying surveillance aircraft use. Method from the FBI surveillance-aircraft research.
+        </p>
+      </div>
+      {q.isLoading ? (
+        <div className="text-xs text-muted-foreground">Looking for circling aircraft…</div>
+      ) : q.error ? (
+        <div className="text-xs text-destructive">Couldn't load circling aircraft right now. It will retry shortly.</div>
+      ) : !q.data?.length ? (
+        <div className="text-xs text-muted-foreground">No circling aircraft in the latest day of data.</div>
+      ) : (
+        <ul className="grid gap-2 md:grid-cols-2">
+          {q.data.map((o) => (
+            <li key={o.icao_hex + o.day} className="border border-border rounded-sm p-3 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <Link to="/alerts" search={{ level: "ALL", county: "ALL", q: o.registration ?? o.icao_hex }} className="font-mono text-sm text-accent hover:underline">
+                  {o.registration ?? o.icao_hex.toUpperCase()}
+                </Link>
+                <span className={`text-[10px] uppercase tracking-widest border rounded-sm px-2 py-0.5 ${tone[o.strength]}`}>{label[o.strength]}</span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">{o.summary}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

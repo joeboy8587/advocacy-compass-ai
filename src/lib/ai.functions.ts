@@ -116,6 +116,10 @@ async function gatherContext(): Promise<string> {
     locks.length
       ? locks.map((l) => `- ${l.lock_id}: r=${l.r}, p=${l.p}`).join("\n")
       : "- (none in recent window)",
+    "## Kern County circling surveillance detector (latest 24h; FBI surveillance-aircraft research method)",
+    await import("./detection-upgrades.server")
+      .then(async (u) => (await u.orbitsKern(24, 8)).map((o) => `- ${o.registration ?? o.icao_hex.toUpperCase()} [${u.orbitStrength(o.score, o.orbits)}]: ${u.describeOrbit(o)}`).join("\n") || "- (none)")
+      .catch(() => "- (detector unavailable)"),
   ].join("\n\n");
 }
 

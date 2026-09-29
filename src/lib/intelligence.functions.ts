@@ -471,15 +471,16 @@ export const getCaseDeck = createServerFn({ method: "GET" })
       subject_icao: string | null;
       subject_reg: string | null;
       related_icaos: string[] | null;
+      related_tails: string[] | null;
     }>(
-      `SELECT case_id, subject_icao, subject_reg, related_icaos
+      `SELECT case_id, subject_icao, subject_reg, related_icaos, related_tails
          FROM cases WHERE case_id = $1 OR id::text = $1 LIMIT 1`,
       [data.caseId],
     );
     const c = rows[0];
     if (!c) throw new Error("That case could not be found.");
     const icaos = [c.subject_icao ?? "", ...(c.related_icaos ?? [])].filter(Boolean);
-    return loadDeck(icaos, c.subject_reg ?? c.case_id, c.case_id);
+    return loadDeck(icaos, c.subject_reg ?? c.case_id, c.case_id, c.related_tails ?? []);
   });
 
 export const recordLeadVerdict = createServerFn({ method: "POST" })

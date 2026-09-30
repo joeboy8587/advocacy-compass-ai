@@ -121,6 +121,69 @@ SELECT a.hex old_hex, b.hex new_hex, a.reg old_reg, b.reg new_reg,
  LIMIT 10`, [icaos, hours], { timeoutMs: 18_000 }).catch(() => []);
 }
 
+// BuzzFeed "Spy Plane Finder" behaviour profile — the three features the random forest
+// ranked highest (steer / boxes / duration) plus the work_day office-hours feature.
+// Registry/owner/airframe are NEVER used to lower a score.
+export type ProfileRow = {
+  icao_hex: string; registration: string | null; days: number; hours_aloft: number;
+  tight_orbit_days: number; max_steer_per_min: number; median_area_km2: number;
+  km2_per_hour: number; workday_share: number; lat: number; lon: number; last_seen: string;
+};
+export const PROFILE_SOURCE =
+  "Method: BuzzFeed News 'Spy Plane Finder' random forest (Aldhous & Seife, 2017) — turn rate (steer), bounding-box area (boxes), flight duration and weekday office-hours share (work_day). Registration, owner type and airframe are never used to clear an aircraft.";
+// Taft (Kern County) drop zone — the only local skydiving site. Bakersfield has none.
+export const TAFT_DROPZONE = { lat: 35.1419, lon: -119.4393, km: 8 };
+
+export async function profileFor(icaos: string[], hours = 24 * 30) {
+  return neonQuery<ProfileRow>(`
+WITH anchor AS (SELECT max(captured_at) t FROM detections),
+p AS (
+  SELECT lower(d.icao_hex) icao_hex, d.registration, d.captured_at, d.latitude, d.longitude, d.heading,
+         lag(d.heading) OVER w ph, lag(d.captured_at) OVER w pt
+    FROM detections d, anchor
+   WHERE lower(d.icao_hex) = ANY($1::text[]) AND d.captured_at > anchor.t - ($2::int * interval '1 hour')
+     AND coalesce(d.on_ground,false) = false AND d.latitude IS NOT NULL
+  WINDOW w AS (PARTITION BY lower(d.icao_hex) ORDER BY d.captured_at)
+), s AS (
+  SELECT *, CASE WHEN ph IS NULL OR heading IS NULL OR extract(epoch FROM captured_at-pt) > 300 THEN NULL
+                 ELSE abs(((heading - ph + 540)::numeric % 360) - 180) END AS steer,
+         captured_at AT TIME ZONE 'America/Los_Angeles' AS lt
+    FROM p
+), d AS (
+  SELECT icao_hex, max(registration) registration, lt::date AS day,
+         greatest(extract(epoch FROM max(captured_at)-min(captured_at))/60.0, 1) minutes,
+         coalesce(sum(steer),0) turn,
+         (max(latitude)-min(latitude))*111.0*(max(longitude)-min(longitude))*111.0*cos(radians(avg(latitude))) area,
+         avg(latitude) lat, avg(longitude) lon,
+         avg(CASE WHEN extract(isodow FROM lt) BETWEEN 1 AND 5 AND extract(hour FROM lt) BETWEEN 7 AND 17 THEN 1 ELSE 0 END) wd,
+         count(*) n, max(captured_at) last_t
+    FROM s GROUP BY 1,3 HAVING count(*) >= 20
+)
+SELECT icao_hex, max(registration) registration, count(*)::int days,
+       round((sum(minutes)/60.0)::numeric,1)::float hours_aloft,
+       count(*) FILTER (WHERE turn/minutes >= 30 AND area < 25 AND minutes >= 10)::int tight_orbit_days,
+       round(max(turn/minutes)::numeric,1)::float max_steer_per_min,
+       round((percentile_cont(0.5) WITHIN GROUP (ORDER BY area))::numeric,2)::float median_area_km2,
+       round((percentile_cont(0.5) WITHIN GROUP (ORDER BY area/(minutes/60.0)))::numeric,2)::float km2_per_hour,
+       round((sum(wd*n)/sum(n))::numeric,2)::float workday_share,
+       avg(lat)::float lat, avg(lon)::float lon, max(last_t)::text last_seen
+  FROM d GROUP BY 1`, [icaos, hours], { timeoutMs: 18_000 }).catch(() => []);
+}
+
+export function nearTaft(lat: number, lon: number) {
+  const km = 111 * Math.sqrt((lat - TAFT_DROPZONE.lat) ** 2 + ((lon - TAFT_DROPZONE.lon) * Math.cos((lat * Math.PI) / 180)) ** 2);
+  return km <= TAFT_DROPZONE.km;
+}
+
+export function profileScore(p: ProfileRow) {
+  const orbit = Math.min(p.tight_orbit_days / 3, 1);
+  const steer = Math.min(p.max_steer_per_min / 45, 1);
+  const box = p.km2_per_hour < 10 ? 1 : p.km2_per_hour < 50 ? 0.5 : 0;
+  const dur = Math.min(p.hours_aloft / 10, 1);
+  const office = p.workday_share >= 0.7 ? 1 : p.workday_share >= 0.5 ? 0.5 : 0;
+  return Math.round((orbit * 0.35 + steer * 0.2 + box * 0.2 + dur * 0.1 + office * 0.15) * 100) / 100;
+}
+
 export function orbitStrength(score: number, orbits: number): "STRONG" | "MODERATE" | "WEAK" {
   if (score >= 0.7 && orbits >= 4) return "STRONG";
   if (score >= 0.5) return "MODERATE";

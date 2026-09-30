@@ -21,6 +21,7 @@ import { getCaseOsint, enrichCase, deepAdsbPull, archiveUrl } from "@/lib/osint.
 import { IdentityResolver } from "@/components/IdentityResolver";
 import { BehaviorProfile } from "@/components/BehaviorProfile";
 import { HypothesisDeck } from "@/components/HypothesisDeck";
+import { LegalActionPanel } from "@/components/LegalActionPanel";
 
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
@@ -174,6 +175,12 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
 
   return (
     <div className="space-y-4">
+      <LegalActionPanel
+        actions={c.verification?.legal_actions}
+        admissions={c.verification?.admissions}
+        attached={c.verification?.attached_documents}
+      />
+
       <section className="panel scanline p-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-xs uppercase tracking-widest neon-text-orange flex items-center gap-2">

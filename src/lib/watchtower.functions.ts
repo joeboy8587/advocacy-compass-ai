@@ -522,6 +522,34 @@ export const getCases = createServerFn({ method: "GET" })
   });
 
 export type CaseMissionType = { type: string; confidence: number; rationale: string };
+
+/** A filing or framework in the accountability package attached to a case. */
+export type CaseLegalAction = {
+  seq: number;
+  doc: string | null;
+  title: string;
+  forum: string;
+  authority: string;
+  asks: string[];
+  precedent?: string[];
+  status: string;
+  sha256: string | null;
+  independent?: boolean;
+};
+
+/** An on-the-record statement by the operator, with its evidentiary effect. */
+export type CaseAdmission = { speaker: string; quote: string; effect: string };
+
+export type CaseAttachedDocument = {
+  sha256: string;
+  indexed?: boolean;
+  file_path?: string;
+  file_type?: string;
+  title?: string;
+  registered_at?: string;
+  block?: string;
+};
+
 export type CaseVerification = {
   verdict?: string;
   confidence?: number;
@@ -531,6 +559,10 @@ export type CaseVerification = {
   mission_type_estimates?: CaseMissionType[];
   recommended_status?: string;
   one_line_summary?: string;
+  legal_actions?: CaseLegalAction[];
+  admissions?: CaseAdmission[];
+  attached_documents?: CaseAttachedDocument[];
+  legal_package_registered_at?: string;
 };
 
 export type CaseDetail = CaseRow & {

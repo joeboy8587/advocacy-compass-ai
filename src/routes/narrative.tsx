@@ -23,7 +23,7 @@ export const Route = createFileRoute("/narrative")({
       <div className="p-8">
         <div className="panel scanline p-6 max-w-xl">
           <div className="text-sm neon-text-orange uppercase tracking-widest mb-2">Narrative failed to load</div>
-          <div className="text-xs text-muted-foreground mb-4">{error.message}</div>
+          <div className="text-xs text-muted-foreground mb-4">{error instanceof Error ? error.message : String(error)}</div>
           <button
             onClick={() => { router.invalidate(); reset(); }}
             className="text-xs uppercase tracking-wider px-3 py-2 rounded-sm border border-accent/40 text-accent hover:bg-accent/10"

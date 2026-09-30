@@ -150,7 +150,7 @@ function strength(confidence: number | null, events: number): "STRONG" | "MODERA
 export type Verdict = "CONFIRMED" | "REVIEW" | "NOT_USEFUL";
 
 export type DeckLead = {
-  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap" | "signal" | "frames";
+  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap" | "signal" | "frames" | "profile";
   item_key: string;
   type: string;
   title: string;
@@ -408,19 +408,21 @@ async function loadDeck(
   // Research-derived detectors (orbit / impossible movement / identity swap).
   try {
     const u = await import("./detection-upgrades.server");
-    const [orbits, sigs, kins, swaps] = await Promise.all([
+    const [orbits, sigs, kins, swaps, profiles] = await Promise.all([
       u.orbitsFor(icaos, 24 * 30, 3),
       u.signalFor(icaos, 24 * 30),
       u.kinematicsFor(icaos, 24 * 30),
       u.idSwapsFor(icaos, 24 * 30),
+      u.profileFor(icaos, 24 * 30),
     ]);
     const o = orbits[0];
     if (o) {
+      const taft = u.nearTaft(o.lat, o.lon);
       push({
         item_kind: "orbit",
         item_key: `orbit:${primary}:${o.day}`,
         type: "ORBIT_SURVEILLANCE",
-        title: `Circling surveillance pattern${o.registration ? ` (${o.registration})` : ""}`,
+        title: `Tight-orbit surveillance pattern${o.registration ? ` (${o.registration})` : ""}`,
         meaning:
           "Camera-carrying surveillance aircraft fly tight, constant circles over one spot so the camera stays locked on. This aircraft's turning and circling match that profile.",
         rule: "14 CFR § 91.119 (minimum safe altitudes) where flown low over people",
@@ -428,7 +430,27 @@ async function loadDeck(
         confidence: o.score,
         strength: u.orbitStrength(o.score, o.orbits),
         latest: o.last_seen,
-        detail: `${u.describeOrbit(o)} ${u.METHOD_SOURCES.orbit}`,
+        detail: `${u.describeOrbit(o)}${taft ? " This circling was centred near the Taft drop zone — rule out a skydiving jump climb before confirming." : ""} ${u.METHOD_SOURCES.orbit}`,
+        partner_icao: null,
+      });
+    }
+    for (const p of profiles) {
+      const sc = u.profileScore(p);
+      if (sc < 0.35) continue;
+      const taft = u.nearTaft(p.lat, p.lon);
+      push({
+        item_kind: "profile",
+        item_key: `profile:${p.icao_hex}`,
+        type: "SPY_PLANE_PROFILE",
+        title: `Matches the spy-plane flight profile${p.registration ? ` (${p.registration})` : ""}`,
+        meaning:
+          "BuzzFeed News caught hidden FBI and DHS planes by how they fly, not who owns them: tight circles, staying over a small area for hours, long flights, and working weekday office hours. This aircraft scores against those same four signs.",
+        rule: "14 CFR § 91.119 (minimum safe altitudes) where flown low over people",
+        events: p.tight_orbit_days,
+        confidence: sc,
+        strength: sc >= 0.7 ? "STRONG" : sc >= 0.5 ? "MODERATE" : "WEAK",
+        latest: p.last_seen,
+        detail: `Over ${p.days} flying day(s) (${p.hours_aloft} hours aloft): tight-orbit days ${p.tight_orbit_days}; sharpest turning ${p.max_steer_per_min}°/minute; typical area covered ${p.median_area_km2} km² (${p.km2_per_hour} km² per hour aloft — smaller means it stayed over one place); ${Math.round(p.workday_share * 100)}% of its flying was on weekdays 7am–6pm Pacific.${taft ? " Its flying centres near the Taft drop zone — rule out skydiving before confirming." : ""} ${u.PROFILE_SOURCE}`,
         partner_icao: null,
       });
     }

@@ -497,6 +497,8 @@ export type CaseRow = {
   is_published: boolean | null;
   human_reviewed: boolean | null;
   completed_at: string | null;
+  related_tails: string[] | null;
+  merged_into: string | null;
 };
 
 export const getCases = createServerFn({ method: "GET" })
@@ -513,7 +515,9 @@ export const getCases = createServerFn({ method: "GET" })
       `SELECT id, case_id, case_type, severity, subject_icao, subject_reg, subject_owner,
               primary_county, wti_score, wti_tier, status, opened_at, bradford_hill_score,
               auto_summary, total_events, anomaly_type, is_published,
-              human_reviewed, completed_at::text AS completed_at
+              human_reviewed, completed_at::text AS completed_at, related_tails,
+              (SELECT m.case_id FROM cases m WHERE m.status <> 'MERGED'
+                 AND m.verification->'merged_from' ? cases.case_id LIMIT 1) AS merged_into
        FROM cases ${where}
        ORDER BY wti_tier DESC NULLS LAST, opened_at DESC
        LIMIT $1`,

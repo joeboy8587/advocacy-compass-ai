@@ -28,6 +28,7 @@ export async function gatherContext(): Promise<string> {
        WHERE machine_confirmed = true ORDER BY locked_at DESC LIMIT 5`,
     ).catch(() => []),
   ]);
+  const admissions = await gatherOperatorAdmissions();
   return [
     "## Current KPIs",
     JSON.stringify(kpis[0], null, 2),
@@ -41,6 +42,55 @@ export async function gatherContext(): Promise<string> {
     locks.length
       ? locks.map((l) => `- ${l.lock_id}: r=${l.r}, p=${l.p}`).join("\n")
       : "- (none in recent window)",
+    admissions,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** On-record operator statements registered on case files. These are quotable
+ *  primary-source admissions — they outrank any inferred motive, and they are
+ *  the first rebuttal to an operational-necessity defence. */
+export async function gatherOperatorAdmissions(): Promise<string> {
+  const rows = await neonQuery<{
+    case_id: string;
+    subject_owner: string | null;
+    admissions: { speaker: string; quote: string; effect: string }[] | null;
+    legal_actions: { title: string; forum: string; authority: string; status: string }[] | null;
+  }>(
+    `SELECT case_id, subject_owner,
+            verification->'admissions'   AS admissions,
+            verification->'legal_actions' AS legal_actions
+       FROM cases
+      WHERE verification ? 'admissions' OR verification ? 'legal_actions'
+      ORDER BY wti_tier DESC NULLS LAST
+      LIMIT 5`,
+  ).catch(() => []);
+  if (!rows.length) return "";
+
+  const blocks = rows.map((r) => {
+    const head = `### ${r.case_id}${r.subject_owner ? ` — ${r.subject_owner}` : ""}`;
+    const adm = (r.admissions ?? [])
+      .map((a) => `- "${a.quote}" — ${a.speaker}\n  EFFECT: ${a.effect}`)
+      .join("\n");
+    const acts = (r.legal_actions ?? [])
+      .map((a) => `- ${a.title} → ${a.forum} (${a.authority}) [${a.status}]`)
+      .join("\n");
+    return [
+      head,
+      adm ? `On-record admissions:\n${adm}` : "",
+      acts ? `Accountability routes filed or drafted:\n${acts}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  });
+
+  return [
+    "## Operator admissions on the public record (QUOTE THESE VERBATIM)",
+    "These are primary-source statements by the operator's own personnel, published in",
+    "journalism or public filings. Cite them before any inference. They defeat",
+    "operational-necessity and 'incidental night flying' defences. Never paraphrase a quote.",
+    ...blocks,
   ].join("\n\n");
 }
 

@@ -212,7 +212,7 @@ export async function runJosiahTool(name: string, args: Record<string, unknown>)
           registry: registry[0] ?? null,
           ownership_note:
             reg.faa_title_owner || reg.known_commercial_operator
-              ? `FAA Title Owner (legal registrant): ${reg.faa_title_owner ?? "unknown"}. Known Commercial Operator (who actually flies it): ${reg.known_commercial_operator ?? "not resolved — do not assume the title owner is the operator"}.${reg.base_airport ? ` Home base: ${reg.base_airport}.` : ""}${reg.operator_context ? ` Context: ${reg.operator_context}` : ""} Leasing/holding companies are normal in aviation finance and are NOT evidence of concealment.`
+              ? `FAA Title Owner (legal registrant): ${reg.faa_title_owner ?? "unknown"}. Known Commercial Operator (who actually flies it): ${reg.known_commercial_operator ?? "not resolved — do not assume the title owner is the operator"}.${reg.base_airport ? ` Home base: ${reg.base_airport}.` : ""}${reg.operator_context ? ` Context: ${reg.operator_context}` : ""} Never dismiss an aircraft because of its registry, owner type (LLC, lease, flight school) or airframe — judge it only on its observed behaviour.`
               : null,
 
           flight_stats: stats,

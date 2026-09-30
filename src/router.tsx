@@ -3,7 +3,8 @@ import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { LoadErrorPanel } from "./components/LoadErrorPanel";
 
-function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function DefaultErrorComponent({ error: rawError, reset }: { error: unknown; reset: () => void }) {
+  const error = rawError instanceof Error ? rawError : new Error(String(rawError));
   console.error(error);
   return <LoadErrorPanel error={error} reset={reset} />;
 }

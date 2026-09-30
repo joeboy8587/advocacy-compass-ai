@@ -92,8 +92,13 @@ function CasesIndex() {
                   {c.case_id || c.id.slice(0, 8)} · {c.case_type}
                 </div>
                 <div className="mt-1 font-bold neon-text-orange truncate">
-                  {c.subject_reg || c.subject_icao || c.subject_owner || "Unidentified subject"}
+                  {(c.related_tails?.length ?? 0) > 1
+                    ? `Fleet file · ${c.related_tails!.join(" · ")}`
+                    : c.subject_reg || c.subject_icao || c.subject_owner || "Unidentified subject"}
                 </div>
+                {c.status === "MERGED" && c.merged_into && (
+                  <div className="text-[11px] text-accent">Now part of {c.merged_into}</div>
+                )}
                 {c.subject_owner && c.subject_reg && (
                   <div className="text-xs text-muted-foreground truncate">{c.subject_owner}</div>
                 )}

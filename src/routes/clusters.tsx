@@ -54,7 +54,7 @@ function ClustersPage() {
 
       {q.data && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Tile label="Grouped aircraft" value={q.data.grouped_aircraft.toLocaleString()} />
             <Tile label="Behaviour groups" value={q.data.clusters.length.toLocaleString()} />
             <Tile
@@ -62,7 +62,21 @@ function ClustersPage() {
               value={q.data.ungrouped_aircraft.toLocaleString()}
               hint="too little flying to fingerprint"
             />
+            <Tile
+              label="Never scored"
+              value={q.data.unscored_aircraft.toLocaleString()}
+              hint="model has not run on these yet"
+            />
           </div>
+          {q.data.at_ceiling > 0 && (
+            <div className="panel p-3 text-xs border-l-2 border-primary">
+              <span className="neon-text-orange">Score ceiling warning: </span>
+              {q.data.at_ceiling.toLocaleString()} of {q.data.grouped_aircraft.toLocaleString()} grouped aircraft
+              ({Math.round((q.data.at_ceiling / Math.max(1, q.data.grouped_aircraft)) * 100)}%) sit at exactly 100.
+              The model maxes out, so a 100 means "at least this unusual", not "the most unusual". Use the
+              behaviour signals and the Hypothesis Deck to rank them.
+            </div>
+          )}
 
           <div className="space-y-2">
             {q.data.clusters.map((c) => {

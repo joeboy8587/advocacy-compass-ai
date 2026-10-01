@@ -409,21 +409,33 @@ export const getBehaviorClusters = createServerFn({ method: "GET" }).handler(asy
             round(avg(profile_score)::numeric, 1)::float AS avg_score,
             round(avg(drift_score)::numeric, 1)::float AS avg_drift,
             round(avg(stability_score)::numeric, 1)::float AS avg_stability,
-            max(updated_at)::text AS updated_at
+            max(updated_at)::text AS updated_at,
+            count(*) FILTER (WHERE profile_score >= 100)::int AS at_ceiling
        FROM aircraft_deep_profiles
       GROUP BY behavioral_cluster
       ORDER BY aircraft DESC`,
   );
-  const grouped = rows.filter((r) => r.behavioral_cluster !== -1);
+  // NULL cluster = airframes the model never scored (no score, no group).
+  // They are not a behaviour group and must never be shown as one.
+  const unscored = rows.find((r) => r.behavioral_cluster == null) ?? null;
+  const grouped = rows.filter((r) => r.behavioral_cluster != null && r.behavioral_cluster !== -1);
   const ungrouped = rows.find((r) => r.behavioral_cluster === -1) ?? null;
+  const scored = grouped.reduce((a, r) => a + r.aircraft, 0);
+  const atCeiling = grouped.reduce((a, r) => a + ((r as { at_ceiling?: number }).at_ceiling ?? 0), 0);
   return {
     clusters: grouped.map<ClusterRow>((r) => ({
       ...r,
       headline: `Cluster ${r.behavioral_cluster}`,
-      meaning: clusterMeaning(r.avg_score, r.avg_drift, r.aircraft),
+      meaning: `${clusterMeaning(r.avg_score, r.avg_drift, r.aircraft)}${
+        (r as { at_ceiling?: number }).at_ceiling
+          ? ` ${(r as { at_ceiling?: number }).at_ceiling!.toLocaleString()} of them are pinned at the 100 ceiling, so the score cannot rank them against each other.`
+          : ""
+      }`,
     })),
     ungrouped_aircraft: ungrouped?.aircraft ?? 0,
-    grouped_aircraft: grouped.reduce((a, r) => a + r.aircraft, 0),
+    unscored_aircraft: unscored?.aircraft ?? 0,
+    grouped_aircraft: scored,
+    at_ceiling: atCeiling,
   };
 });
 

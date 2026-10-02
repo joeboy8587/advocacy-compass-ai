@@ -81,6 +81,19 @@ export const JOSIAH_TOOLS: ToolSpec[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "search_knowledge_vault",
+      description:
+        "Search the Intelligence Vault: every research file, case law, FAA lookup, court record, prior analysis, agent output, log and radar screenshot the team has already filed. ALWAYS call this before analysing an aircraft, company or topic so you cite what was already found and avoid repeating work.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "Tail number, ICAO hex, company, place, statute or a plain-English question." } },
+        required: ["query"],
+      },
+    },
+  },
 ];
 
 const FORBIDDEN = /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do|merge)\b/i;
@@ -221,6 +234,15 @@ export async function runJosiahTool(name: string, args: Record<string, unknown>)
         };
       }
 
+      case "search_knowledge_vault": {
+        const { searchVaultCore } = await import("./vault.server");
+        const hits = await searchVaultCore(String(args.query ?? ""), 8);
+        return hits.map((h) => ({
+          title: h.title, kind: h.kind, filed: h.created_at, case_id: h.case_id, sha256: h.sha256,
+          summary: h.summary, key_findings: h.key_findings, conclusion: h.conclusion,
+          entities: h.entities.slice(0, 15).map((e) => e.name),
+        }));
+      }
       default:
         return { error: `unknown tool ${name}` };
     }

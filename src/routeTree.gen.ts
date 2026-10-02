@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ViolationsRouteImport } from './routes/violations'
+import { Route as VaultRouteImport } from './routes/vault'
 import { Route as SpoofingRouteImport } from './routes/spoofing'
 import { Route as ScreenshotsRouteImport } from './routes/screenshots'
 import { Route as RegulationsRouteImport } from './routes/regulations'
@@ -34,6 +35,11 @@ import { Route as ApiPublicOsintNightlyRouteImport } from './routes/api/public/o
 const ViolationsRoute = ViolationsRouteImport.update({
   id: '/violations',
   path: '/violations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VaultRoute = VaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SpoofingRoute = SpoofingRouteImport.update({
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
+  '/vault': typeof VaultRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
@@ -177,6 +184,7 @@ export interface FileRoutesByTo {
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
+  '/vault': typeof VaultRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
@@ -201,6 +209,7 @@ export interface FileRoutesById {
   '/regulations': typeof RegulationsRoute
   '/screenshots': typeof ScreenshotsRoute
   '/spoofing': typeof SpoofingRoute
+  '/vault': typeof VaultRoute
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
@@ -226,6 +235,7 @@ export interface FileRouteTypes {
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
+    | '/vault'
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
@@ -249,6 +259,7 @@ export interface FileRouteTypes {
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
+    | '/vault'
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
@@ -272,6 +283,7 @@ export interface FileRouteTypes {
     | '/regulations'
     | '/screenshots'
     | '/spoofing'
+    | '/vault'
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
@@ -296,6 +308,7 @@ export interface RootRouteChildren {
   RegulationsRoute: typeof RegulationsRoute
   ScreenshotsRoute: typeof ScreenshotsRoute
   SpoofingRoute: typeof SpoofingRoute
+  VaultRoute: typeof VaultRoute
   ViolationsRoute: typeof ViolationsRoute
   CasesCaseIdBriefRoute: typeof CasesCaseIdBriefRoute
   ApiPublicOsintNightlyRoute: typeof ApiPublicOsintNightlyRoute
@@ -308,6 +321,13 @@ declare module '@tanstack/react-router' {
       path: '/violations'
       fullPath: '/violations'
       preLoaderRoute: typeof ViolationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vault': {
+      id: '/vault'
+      path: '/vault'
+      fullPath: '/vault'
+      preLoaderRoute: typeof VaultRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/spoofing': {
@@ -482,6 +502,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegulationsRoute: RegulationsRoute,
   ScreenshotsRoute: ScreenshotsRoute,
   SpoofingRoute: SpoofingRoute,
+  VaultRoute: VaultRoute,
   ViolationsRoute: ViolationsRoute,
   CasesCaseIdBriefRoute: CasesCaseIdBriefRoute,
   ApiPublicOsintNightlyRoute: ApiPublicOsintNightlyRoute,

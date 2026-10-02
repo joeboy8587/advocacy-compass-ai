@@ -183,7 +183,7 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
       />
 
       <InvestigationMemory
-        caseId={c.case_id ?? undefined}
+        caseId={caseId}
         identifiers={[c.subject_reg, c.subject_icao, c.subject_owner, ...(c.related_tails ?? [])].filter((x): x is string => !!x)}
       />
 

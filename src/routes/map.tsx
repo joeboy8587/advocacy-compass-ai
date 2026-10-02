@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { attachAircraftToCase } from "@/lib/casework.functions";
 import { getCases } from "@/lib/watchtower.functions";
 import { HypothesisDeck } from "@/components/HypothesisDeck";
+import { InvestigationMemory } from "@/components/InvestigationMemory";
 
 export const Route = createFileRoute("/map")({
   head: () => ({
@@ -649,6 +650,8 @@ function Inspector({
           </Button>
 
           <HypothesisDeck icao={data.icao_hex} label={data.registration ?? data.icao_hex.toUpperCase()} />
+
+          <InvestigationMemory compact identifiers={[data.registration, data.icao_hex].filter((x): x is string => !!x)} />
 
 
           <div className="border-t border-border pt-3 space-y-2">

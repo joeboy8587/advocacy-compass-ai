@@ -22,6 +22,7 @@ import { IdentityResolver } from "@/components/IdentityResolver";
 import { BehaviorProfile } from "@/components/BehaviorProfile";
 import { HypothesisDeck } from "@/components/HypothesisDeck";
 import { LegalActionPanel } from "@/components/LegalActionPanel";
+import { InvestigationMemory } from "@/components/InvestigationMemory";
 
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
@@ -179,6 +180,11 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
         actions={c.verification?.legal_actions}
         admissions={c.verification?.admissions}
         attached={c.verification?.attached_documents}
+      />
+
+      <InvestigationMemory
+        caseId={c.case_id ?? undefined}
+        identifiers={[c.subject_reg, c.subject_icao, c.subject_owner, ...(c.related_tails ?? [])].filter((x): x is string => !!x)}
       />
 
       <section className="panel scanline p-4 flex items-start justify-between gap-4">

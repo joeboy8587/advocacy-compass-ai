@@ -373,7 +373,7 @@ export const listScreenshots = createServerFn({ method: "GET" })
     }
     return q<RadarScreenshot>(
       `SELECT id, uploaded_at, source, filename, file_size, sha256,
-              image_data, mime_type,
+              CASE WHEN image_data IS NOT NULL THEN '/api/screenshot-image/' || id::text END AS image_data, mime_type,
               exif_taken_at, tz_offset_min, tail, icao_hex, operator, aircraft_type,
               altitude_ft, groundspeed_kts, notes,
               match_count, match_window_s, best_match_delta_s, match_status,

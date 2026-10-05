@@ -30,6 +30,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CasesNewRouteImport } from './routes/cases.new'
 import { Route as CasesCaseIdRouteImport } from './routes/cases.$caseId'
 import { Route as CasesCaseIdBriefRouteImport } from './routes/cases_.$caseId.brief'
+import { Route as ApiScreenshotImageIdRouteImport } from './routes/api/screenshot-image.$id'
 import { Route as ApiPublicOsintNightlyRouteImport } from './routes/api/public/osint.nightly'
 
 const ViolationsRoute = ViolationsRouteImport.update({
@@ -137,6 +138,11 @@ const CasesCaseIdBriefRoute = CasesCaseIdBriefRouteImport.update({
   path: '/cases/$caseId/brief',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiScreenshotImageIdRoute = ApiScreenshotImageIdRouteImport.update({
+  id: '/api/screenshot-image/$id',
+  path: '/api/screenshot-image/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicOsintNightlyRoute = ApiPublicOsintNightlyRouteImport.update({
   id: '/api/public/osint/nightly',
   path: '/api/public/osint/nightly',
@@ -164,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
+  '/api/screenshot-image/$id': typeof ApiScreenshotImageIdRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
   '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
 }
@@ -188,6 +195,7 @@ export interface FileRoutesByTo {
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
+  '/api/screenshot-image/$id': typeof ApiScreenshotImageIdRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
   '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
 }
@@ -213,6 +221,7 @@ export interface FileRoutesById {
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
+  '/api/screenshot-image/$id': typeof ApiScreenshotImageIdRoute
   '/cases_/$caseId/brief': typeof CasesCaseIdBriefRoute
   '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
 }
@@ -239,6 +248,7 @@ export interface FileRouteTypes {
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
+    | '/api/screenshot-image/$id'
     | '/cases/$caseId/brief'
     | '/api/public/osint/nightly'
   fileRoutesByTo: FileRoutesByTo
@@ -263,6 +273,7 @@ export interface FileRouteTypes {
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
+    | '/api/screenshot-image/$id'
     | '/cases/$caseId/brief'
     | '/api/public/osint/nightly'
   id:
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
+    | '/api/screenshot-image/$id'
     | '/cases_/$caseId/brief'
     | '/api/public/osint/nightly'
   fileRoutesById: FileRoutesById
@@ -310,6 +322,7 @@ export interface RootRouteChildren {
   SpoofingRoute: typeof SpoofingRoute
   VaultRoute: typeof VaultRoute
   ViolationsRoute: typeof ViolationsRoute
+  ApiScreenshotImageIdRoute: typeof ApiScreenshotImageIdRoute
   CasesCaseIdBriefRoute: typeof CasesCaseIdBriefRoute
   ApiPublicOsintNightlyRoute: typeof ApiPublicOsintNightlyRoute
 }
@@ -463,6 +476,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CasesCaseIdBriefRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/screenshot-image/$id': {
+      id: '/api/screenshot-image/$id'
+      path: '/api/screenshot-image/$id'
+      fullPath: '/api/screenshot-image/$id'
+      preLoaderRoute: typeof ApiScreenshotImageIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/osint/nightly': {
       id: '/api/public/osint/nightly'
       path: '/api/public/osint/nightly'
@@ -504,6 +524,7 @@ const rootRouteChildren: RootRouteChildren = {
   SpoofingRoute: SpoofingRoute,
   VaultRoute: VaultRoute,
   ViolationsRoute: ViolationsRoute,
+  ApiScreenshotImageIdRoute: ApiScreenshotImageIdRoute,
   CasesCaseIdBriefRoute: CasesCaseIdBriefRoute,
   ApiPublicOsintNightlyRoute: ApiPublicOsintNightlyRoute,
 }

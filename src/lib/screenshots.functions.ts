@@ -182,6 +182,13 @@ let schemaReady: Promise<void> | null = null;
 async function ensureSchema() {
   if (!schemaReady) {
     schemaReady = (async () => {
+      // Table-altering setup takes an exclusive lock; if another long query holds the
+      // table, every save queues behind it. Skip it entirely once the schema is current.
+      const ready = await q<{ n: number }>(
+        `SELECT count(*)::int AS n FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='radar_screenshots' AND column_name='bind_class'`,
+      );
+      if (ready[0]?.n) return;
       await exec(`
         CREATE TABLE IF NOT EXISTS radar_screenshots (
           id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -373,7 +380,7 @@ export const listScreenshots = createServerFn({ method: "GET" })
     }
     return q<RadarScreenshot>(
       `SELECT id, uploaded_at, source, filename, file_size, sha256,
-              image_data, mime_type,
+              CASE WHEN image_data IS NOT NULL THEN '/api/screenshot-image/' || id::text END AS image_data, mime_type,
               exif_taken_at, tz_offset_min, tail, icao_hex, operator, aircraft_type,
               altitude_ft, groundspeed_kts, notes,
               match_count, match_window_s, best_match_delta_s, match_status,

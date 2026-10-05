@@ -182,6 +182,13 @@ let schemaReady: Promise<void> | null = null;
 async function ensureSchema() {
   if (!schemaReady) {
     schemaReady = (async () => {
+      // Table-altering setup takes an exclusive lock; if another long query holds the
+      // table, every save queues behind it. Skip it entirely once the schema is current.
+      const ready = await q<{ n: number }>(
+        `SELECT count(*)::int AS n FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='radar_screenshots' AND column_name='bind_class'`,
+      );
+      if (ready[0]?.n) return;
       await exec(`
         CREATE TABLE IF NOT EXISTS radar_screenshots (
           id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),

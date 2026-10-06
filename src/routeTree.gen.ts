@@ -9,108 +9,33 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ViolationsRouteImport } from './routes/violations'
-import { Route as VaultRouteImport } from './routes/vault'
-import { Route as SpoofingRouteImport } from './routes/spoofing'
-import { Route as ScreenshotsRouteImport } from './routes/screenshots'
-import { Route as RegulationsRouteImport } from './routes/regulations'
-import { Route as PatternsRouteImport } from './routes/patterns'
-import { Route as OperatorsRouteImport } from './routes/operators'
-import { Route as NarrativeRouteImport } from './routes/narrative'
-import { Route as MapRouteImport } from './routes/map'
-import { Route as LeadsRouteImport } from './routes/leads'
-import { Route as IntelRouteImport } from './routes/intel'
-import { Route as DoctrineRouteImport } from './routes/doctrine'
-import { Route as DetectionsRouteImport } from './routes/detections'
-import { Route as CoordinationRouteImport } from './routes/coordination'
-import { Route as ClustersRouteImport } from './routes/clusters'
-import { Route as CasesRouteImport } from './routes/cases'
-import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as CasesNewRouteImport } from './routes/cases.new'
+import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as CasesRouteImport } from './routes/cases'
+import { Route as ClustersRouteImport } from './routes/clusters'
+import { Route as CoordinationRouteImport } from './routes/coordination'
+import { Route as DetectionsRouteImport } from './routes/detections'
+import { Route as DoctrineRouteImport } from './routes/doctrine'
+import { Route as IntelRouteImport } from './routes/intel'
+import { Route as LeadsRouteImport } from './routes/leads'
+import { Route as MapRouteImport } from './routes/map'
+import { Route as NarrativeRouteImport } from './routes/narrative'
+import { Route as OperatorsRouteImport } from './routes/operators'
+import { Route as PatternsRouteImport } from './routes/patterns'
+import { Route as RegulationsRouteImport } from './routes/regulations'
+import { Route as ScreenshotsRouteImport } from './routes/screenshots'
+import { Route as SpoofingRouteImport } from './routes/spoofing'
+import { Route as VaultRouteImport } from './routes/vault'
+import { Route as ViolationsRouteImport } from './routes/violations'
 import { Route as CasesCaseIdRouteImport } from './routes/cases.$caseId'
-import { Route as CasesCaseIdBriefRouteImport } from './routes/cases_.$caseId.brief'
+import { Route as CasesNewRouteImport } from './routes/cases.new'
 import { Route as ApiScreenshotImageIdRouteImport } from './routes/api/screenshot-image.$id'
+import { Route as CasesCaseIdBriefRouteImport } from './routes/cases_.$caseId.brief'
 import { Route as ApiPublicOsintNightlyRouteImport } from './routes/api/public/osint.nightly'
 
-const ViolationsRoute = ViolationsRouteImport.update({
-  id: '/violations',
-  path: '/violations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VaultRoute = VaultRouteImport.update({
-  id: '/vault',
-  path: '/vault',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SpoofingRoute = SpoofingRouteImport.update({
-  id: '/spoofing',
-  path: '/spoofing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ScreenshotsRoute = ScreenshotsRouteImport.update({
-  id: '/screenshots',
-  path: '/screenshots',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RegulationsRoute = RegulationsRouteImport.update({
-  id: '/regulations',
-  path: '/regulations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PatternsRoute = PatternsRouteImport.update({
-  id: '/patterns',
-  path: '/patterns',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OperatorsRoute = OperatorsRouteImport.update({
-  id: '/operators',
-  path: '/operators',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NarrativeRoute = NarrativeRouteImport.update({
-  id: '/narrative',
-  path: '/narrative',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MapRoute = MapRouteImport.update({
-  id: '/map',
-  path: '/map',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LeadsRoute = LeadsRouteImport.update({
-  id: '/leads',
-  path: '/leads',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IntelRoute = IntelRouteImport.update({
-  id: '/intel',
-  path: '/intel',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DoctrineRoute = DoctrineRouteImport.update({
-  id: '/doctrine',
-  path: '/doctrine',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DetectionsRoute = DetectionsRouteImport.update({
-  id: '/detections',
-  path: '/detections',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CoordinationRoute = CoordinationRouteImport.update({
-  id: '/coordination',
-  path: '/coordination',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClustersRoute = ClustersRouteImport.update({
-  id: '/clusters',
-  path: '/clusters',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CasesRoute = CasesRouteImport.update({
-  id: '/cases',
-  path: '/cases',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsRoute = AlertsRouteImport.update({
@@ -118,29 +43,104 @@ const AlertsRoute = AlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const CasesRoute = CasesRouteImport.update({
+  id: '/cases',
+  path: '/cases',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CasesNewRoute = CasesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CasesRoute,
+const ClustersRoute = ClustersRouteImport.update({
+  id: '/clusters',
+  path: '/clusters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoordinationRoute = CoordinationRouteImport.update({
+  id: '/coordination',
+  path: '/coordination',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DetectionsRoute = DetectionsRouteImport.update({
+  id: '/detections',
+  path: '/detections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DoctrineRoute = DoctrineRouteImport.update({
+  id: '/doctrine',
+  path: '/doctrine',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntelRoute = IntelRouteImport.update({
+  id: '/intel',
+  path: '/intel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeadsRoute = LeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MapRoute = MapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NarrativeRoute = NarrativeRouteImport.update({
+  id: '/narrative',
+  path: '/narrative',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperatorsRoute = OperatorsRouteImport.update({
+  id: '/operators',
+  path: '/operators',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PatternsRoute = PatternsRouteImport.update({
+  id: '/patterns',
+  path: '/patterns',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegulationsRoute = RegulationsRouteImport.update({
+  id: '/regulations',
+  path: '/regulations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScreenshotsRoute = ScreenshotsRouteImport.update({
+  id: '/screenshots',
+  path: '/screenshots',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpoofingRoute = SpoofingRouteImport.update({
+  id: '/spoofing',
+  path: '/spoofing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VaultRoute = VaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ViolationsRoute = ViolationsRouteImport.update({
+  id: '/violations',
+  path: '/violations',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const CasesCaseIdRoute = CasesCaseIdRouteImport.update({
   id: '/$caseId',
   path: '/$caseId',
   getParentRoute: () => CasesRoute,
 } as any)
-const CasesCaseIdBriefRoute = CasesCaseIdBriefRouteImport.update({
-  id: '/cases_/$caseId/brief',
-  path: '/cases/$caseId/brief',
-  getParentRoute: () => rootRouteImport,
+const CasesNewRoute = CasesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CasesRoute,
 } as any)
 const ApiScreenshotImageIdRoute = ApiScreenshotImageIdRouteImport.update({
   id: '/api/screenshot-image/$id',
   path: '/api/screenshot-image/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CasesCaseIdBriefRoute = CasesCaseIdBriefRouteImport.update({
+  id: '/cases_/$caseId/brief',
+  path: '/cases/$caseId/brief',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicOsintNightlyRoute = ApiPublicOsintNightlyRouteImport.update({
@@ -329,116 +329,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/violations': {
-      id: '/violations'
-      path: '/violations'
-      fullPath: '/violations'
-      preLoaderRoute: typeof ViolationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/vault': {
-      id: '/vault'
-      path: '/vault'
-      fullPath: '/vault'
-      preLoaderRoute: typeof VaultRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/spoofing': {
-      id: '/spoofing'
-      path: '/spoofing'
-      fullPath: '/spoofing'
-      preLoaderRoute: typeof SpoofingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/screenshots': {
-      id: '/screenshots'
-      path: '/screenshots'
-      fullPath: '/screenshots'
-      preLoaderRoute: typeof ScreenshotsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/regulations': {
-      id: '/regulations'
-      path: '/regulations'
-      fullPath: '/regulations'
-      preLoaderRoute: typeof RegulationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/patterns': {
-      id: '/patterns'
-      path: '/patterns'
-      fullPath: '/patterns'
-      preLoaderRoute: typeof PatternsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/operators': {
-      id: '/operators'
-      path: '/operators'
-      fullPath: '/operators'
-      preLoaderRoute: typeof OperatorsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/narrative': {
-      id: '/narrative'
-      path: '/narrative'
-      fullPath: '/narrative'
-      preLoaderRoute: typeof NarrativeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/map': {
-      id: '/map'
-      path: '/map'
-      fullPath: '/map'
-      preLoaderRoute: typeof MapRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/leads': {
-      id: '/leads'
-      path: '/leads'
-      fullPath: '/leads'
-      preLoaderRoute: typeof LeadsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/intel': {
-      id: '/intel'
-      path: '/intel'
-      fullPath: '/intel'
-      preLoaderRoute: typeof IntelRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/doctrine': {
-      id: '/doctrine'
-      path: '/doctrine'
-      fullPath: '/doctrine'
-      preLoaderRoute: typeof DoctrineRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/detections': {
-      id: '/detections'
-      path: '/detections'
-      fullPath: '/detections'
-      preLoaderRoute: typeof DetectionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/coordination': {
-      id: '/coordination'
-      path: '/coordination'
-      fullPath: '/coordination'
-      preLoaderRoute: typeof CoordinationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/clusters': {
-      id: '/clusters'
-      path: '/clusters'
-      fullPath: '/clusters'
-      preLoaderRoute: typeof ClustersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cases': {
-      id: '/cases'
-      path: '/cases'
-      fullPath: '/cases'
-      preLoaderRoute: typeof CasesRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts': {
@@ -448,19 +343,117 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/cases': {
+      id: '/cases'
+      path: '/cases'
+      fullPath: '/cases'
+      preLoaderRoute: typeof CasesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cases/new': {
-      id: '/cases/new'
-      path: '/new'
-      fullPath: '/cases/new'
-      preLoaderRoute: typeof CasesNewRouteImport
-      parentRoute: typeof CasesRoute
+    '/clusters': {
+      id: '/clusters'
+      path: '/clusters'
+      fullPath: '/clusters'
+      preLoaderRoute: typeof ClustersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/coordination': {
+      id: '/coordination'
+      path: '/coordination'
+      fullPath: '/coordination'
+      preLoaderRoute: typeof CoordinationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/detections': {
+      id: '/detections'
+      path: '/detections'
+      fullPath: '/detections'
+      preLoaderRoute: typeof DetectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/doctrine': {
+      id: '/doctrine'
+      path: '/doctrine'
+      fullPath: '/doctrine'
+      preLoaderRoute: typeof DoctrineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/intel': {
+      id: '/intel'
+      path: '/intel'
+      fullPath: '/intel'
+      preLoaderRoute: typeof IntelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leads': {
+      id: '/leads'
+      path: '/leads'
+      fullPath: '/leads'
+      preLoaderRoute: typeof LeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/map': {
+      id: '/map'
+      path: '/map'
+      fullPath: '/map'
+      preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/narrative': {
+      id: '/narrative'
+      path: '/narrative'
+      fullPath: '/narrative'
+      preLoaderRoute: typeof NarrativeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operators': {
+      id: '/operators'
+      path: '/operators'
+      fullPath: '/operators'
+      preLoaderRoute: typeof OperatorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/patterns': {
+      id: '/patterns'
+      path: '/patterns'
+      fullPath: '/patterns'
+      preLoaderRoute: typeof PatternsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/regulations': {
+      id: '/regulations'
+      path: '/regulations'
+      fullPath: '/regulations'
+      preLoaderRoute: typeof RegulationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/screenshots': {
+      id: '/screenshots'
+      path: '/screenshots'
+      fullPath: '/screenshots'
+      preLoaderRoute: typeof ScreenshotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/spoofing': {
+      id: '/spoofing'
+      path: '/spoofing'
+      fullPath: '/spoofing'
+      preLoaderRoute: typeof SpoofingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vault': {
+      id: '/vault'
+      path: '/vault'
+      fullPath: '/vault'
+      preLoaderRoute: typeof VaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/violations': {
+      id: '/violations'
+      path: '/violations'
+      fullPath: '/violations'
+      preLoaderRoute: typeof ViolationsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/cases/$caseId': {
       id: '/cases/$caseId'
@@ -469,18 +462,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CasesCaseIdRouteImport
       parentRoute: typeof CasesRoute
     }
-    '/cases_/$caseId/brief': {
-      id: '/cases_/$caseId/brief'
-      path: '/cases/$caseId/brief'
-      fullPath: '/cases/$caseId/brief'
-      preLoaderRoute: typeof CasesCaseIdBriefRouteImport
-      parentRoute: typeof rootRouteImport
+    '/cases/new': {
+      id: '/cases/new'
+      path: '/new'
+      fullPath: '/cases/new'
+      preLoaderRoute: typeof CasesNewRouteImport
+      parentRoute: typeof CasesRoute
     }
     '/api/screenshot-image/$id': {
       id: '/api/screenshot-image/$id'
       path: '/api/screenshot-image/$id'
       fullPath: '/api/screenshot-image/$id'
       preLoaderRoute: typeof ApiScreenshotImageIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cases_/$caseId/brief': {
+      id: '/cases_/$caseId/brief'
+      path: '/cases/$caseId/brief'
+      fullPath: '/cases/$caseId/brief'
+      preLoaderRoute: typeof CasesCaseIdBriefRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/osint/nightly': {

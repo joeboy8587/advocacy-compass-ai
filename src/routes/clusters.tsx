@@ -3,7 +3,7 @@ import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Boxes, Loader2, ChevronDown, ChevronRight } from "lucide-react";
-import { getBehaviorClusters, getClusterMembers, type ClusterSort } from "@/lib/profiler.functions";
+import { getBehaviorClusters, getCeilingRanking, getClusterMembers, type ClusterSort } from "@/lib/profiler.functions";
 import { BehaviorProfile } from "@/components/BehaviorProfile";
 import { HypothesisDeck } from "@/components/HypothesisDeck";
 import { LoadErrorPanel } from "@/components/LoadErrorPanel";
@@ -78,6 +78,7 @@ function ClustersPage() {
               behaviour signals and the Hypothesis Deck to rank them.
             </div>
           )}
+          {q.data.at_ceiling > 0 && <CeilingRanking />}
 
           <div className="space-y-2">
             {q.data.clusters.map((c) => {
@@ -219,6 +220,81 @@ function ClusterMembers({ cluster }: { cluster: number }) {
       {deckIcao && <HypothesisDeck icao={deckIcao} title={`Leads for ${deckIcao}`} />}
       {icao && <BehaviorProfile icao={icao} />}
     </div>
+  );
+}
+
+function CeilingRanking() {
+  const r = useQuery({
+    queryKey: ["ceiling-ranking"],
+    queryFn: () => getCeilingRanking({ data: { limit: 25 } }),
+    staleTime: 300_000,
+  });
+  const [deckIcao, setDeckIcao] = useState<string | null>(null);
+  return (
+    <section className="panel p-4 space-y-3">
+      <div>
+        <h2 className="text-sm neon-text-orange">Ranked: the aircraft stuck at 100</h2>
+        <p className="text-[11px] text-muted-foreground mt-1 max-w-3xl">
+          Every aircraft pinned at 100, re-ranked by surveillance priority: time flying low (35%), very low under
+          500 ft (25%), at night (20%), circling (15%) and hidden identity (5%). Ownership is never used. Top 25 shown.
+        </p>
+      </div>
+      {r.isLoading && (
+        <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+          <Loader2 className="size-3 animate-spin" /> Ranking 11,000+ aircraft…
+        </div>
+      )}
+      {r.isError && <LoadErrorPanel error={r.error} reset={() => r.refetch()} title="Ranking unavailable" />}
+      {r.data && (
+        <div className="overflow-auto">
+          <ExportBar rows={r.data as unknown as Array<Record<string, unknown>>} fileName="ceiling-ranking" note="csv = ranked list" />
+          <table className="w-full text-xs mt-2">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-widest text-muted-foreground border-b border-border">
+                <th className="py-2 pr-3">#</th>
+                <th className="py-2 pr-3">ICAO</th>
+                <th className="py-2 pr-3">Tail</th>
+                <th className="py-2 pr-3">Owner on record</th>
+                <th className="py-2 pr-3">Group</th>
+                <th className="py-2 pr-3 text-right">Priority</th>
+                <th className="py-2 pr-3">Why</th>
+                <th className="py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {r.data.map((m, i) => (
+                <tr key={m.icao_hex} className="border-b border-border/40 hover:bg-secondary/40 align-top">
+                  <td className="py-2 pr-3 tabular-nums text-muted-foreground">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono neon-text-green">{m.icao_hex}</td>
+                  <td className="py-2 pr-3">{m.registration || "—"}</td>
+                  <td className="py-2 pr-3 text-muted-foreground truncate max-w-[180px]">{m.owner || "Not in registry"}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{m.behavioral_cluster ?? "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums neon-text-green">{m.tactical ?? "—"}</td>
+                  <td className="py-2 pr-3">
+                    <div className="flex flex-wrap gap-1">
+                      <Chip label="Low" v={m.low_alt_pct} unit="%" hot={50} />
+                      <Chip label="<500ft" v={m.very_low_pct} unit="%" hot={30} />
+                      <Chip label="Night" v={m.night_pct} unit="%" hot={40} />
+                      <Chip label="Circling" v={m.loiter_deg} unit="°" hot={80} />
+                      <Chip label="Hidden ID" v={m.masked_pct} unit="%" hot={5} />
+                    </div>
+                  </td>
+                  <td className="py-2 text-right">
+                    <button
+                      onClick={() => setDeckIcao(deckIcao === m.icao_hex ? null : m.icao_hex)}
+                      className="px-2 py-1 text-[10px] uppercase tracking-widest border border-primary text-primary rounded-sm"
+                    >
+                      {deckIcao === m.icao_hex ? "Hide leads" : "Leads"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {deckIcao && <HypothesisDeck icao={deckIcao} title={`Leads for ${deckIcao}`} />}
+    </section>
   );
 }
 

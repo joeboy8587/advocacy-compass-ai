@@ -469,22 +469,65 @@ function topDims(j: Record<string, number> | null): string[] {
     .map(([k]) => k.replace(/_/g, " "));
 }
 
+// Tactical surveillance priority: breaks the 100-point ceiling by weighing the
+// behaviours that matter for surveillance (low/very-low flight, night, circling,
+// hidden identity). Ownership never enters the formula.
+const TACTICAL_SQL = `round((
+   COALESCE((feature_vector->>'low_alt_ratio')::numeric, 0) * 35 +
+   COALESCE((feature_vector->>'very_low_ratio')::numeric, 0) * 25 +
+   LEAST(COALESCE((feature_vector->>'night_pct')::numeric, 0) / 100.0, 1) * 20 +
+   LEAST(COALESCE((feature_vector->>'heading_variance')::numeric, 0) / 100.0, 1) * 15 +
+   COALESCE((feature_vector->>'masked_ratio')::numeric, 0) * 5
+ ), 1)::float`;
+
+export type ClusterSort = "tactical" | "score" | "drift" | "detections";
+
+export type TacticalMember = ClusterMember & {
+  tactical: number | null;
+  low_alt_pct: number | null;
+  very_low_pct: number | null;
+  night_pct: number | null;
+  loiter_deg: number | null;
+  masked_pct: number | null;
+};
+
 export const getClusterMembers = createServerFn({ method: "GET" })
-  .inputValidator((d: { cluster: number; limit?: number }) => ({
+  .inputValidator((d: { cluster: number; limit?: number; sort?: ClusterSort }) => ({
     cluster: Number(d?.cluster),
     limit: Math.min(d?.limit ?? 40, 200),
+    sort: (["tactical", "score", "drift", "detections"].includes(d?.sort ?? "") ? d.sort : "tactical") as ClusterSort,
   }))
-  .handler(async ({ data }): Promise<ClusterMember[]> => {
-    const rows = await q<ClusterMember & { top_anomaly_dimensions: Record<string, number> | null }>(
+  .handler(async ({ data }): Promise<TacticalMember[]> => {
+    const baseOrder =
+      data.sort === "score" ? "profile_score DESC NULLS LAST, tactical DESC"
+      : data.sort === "drift" ? "drift_score DESC NULLS LAST"
+      : data.sort === "detections" ? "COALESCE((feature_vector->>'lifetime_detections')::numeric,0) DESC"
+      : "tactical DESC, profile_score DESC NULLS LAST";
+    const outerOrder =
+      data.sort === "score" ? "d.profile_score DESC NULLS LAST, d.tactical DESC"
+      : data.sort === "drift" ? "d.drift_score DESC NULLS LAST"
+      : data.sort === "detections" ? "ap.total_detections DESC NULLS LAST"
+      : "d.tactical DESC, d.profile_score DESC NULLS LAST";
+    const rows = await q<TacticalMember & { top_anomaly_dimensions: Record<string, number> | null }>(
       `WITH base AS (
-         SELECT icao_hex, profile_score, drift_score, top_anomaly_dimensions
+         SELECT icao_hex, profile_score, drift_score, top_anomaly_dimensions,
+                ${TACTICAL_SQL} AS tactical,
+                round(COALESCE((feature_vector->>'low_alt_ratio')::numeric,0)*100,0)::float AS low_alt_pct,
+                round(COALESCE((feature_vector->>'very_low_ratio')::numeric,0)*100,0)::float AS very_low_pct,
+                round(COALESCE((feature_vector->>'night_pct')::numeric,0),0)::float AS night_pct,
+                round(COALESCE((feature_vector->>'heading_variance')::numeric,0),0)::float AS loiter_deg,
+                round(COALESCE((feature_vector->>'masked_ratio')::numeric,0)*100,0)::float AS masked_pct,
+                feature_vector
            FROM aircraft_deep_profiles
           WHERE behavioral_cluster = $1
-          ORDER BY profile_score DESC NULLS LAST
+          ORDER BY ${baseOrder}
           LIMIT $2
        )
-       ${MEMBER_SELECT}
-       ORDER BY d.profile_score DESC NULLS LAST`,
+       ${MEMBER_SELECT.replace(
+         "SELECT d.icao_hex, d.profile_score, d.drift_score, d.top_anomaly_dimensions,",
+         "SELECT d.icao_hex, d.profile_score, d.drift_score, d.top_anomaly_dimensions, d.tactical, d.low_alt_pct, d.very_low_pct, d.night_pct, d.loiter_deg, d.masked_pct,",
+       )}
+       ORDER BY ${outerOrder}`,
       [data.cluster, data.limit],
     );
     return rows.map((r) => ({ ...r, top_dimensions: topDims(r.top_anomaly_dimensions) }));

@@ -428,7 +428,7 @@ export const getBehaviorClusters = createServerFn({ method: "GET" }).handler(asy
       headline: `Cluster ${r.behavioral_cluster}`,
       meaning: `${clusterMeaning(r.avg_score, r.avg_drift, r.aircraft)}${
         (r as { at_ceiling?: number }).at_ceiling
-          ? ` ${(r as { at_ceiling?: number }).at_ceiling!.toLocaleString()} of them are pinned at the 100 ceiling, so the score cannot rank them against each other.`
+          ? ` ${(r as { at_ceiling?: number }).at_ceiling!.toLocaleString()} of them are pinned at the 100 ceiling, so the score alone cannot rank them — open the group and use Surveillance priority.`
           : ""
       }`,
     })),
@@ -582,3 +582,32 @@ export const getMlOpsHealth = createServerFn({ method: "GET" }).handler(async ()
     model_age_hours: modelAgeH == null ? null : Math.round(modelAgeH),
   };
 });
+
+// Fleet-wide ranking of every aircraft pinned at the 100 ceiling, by surveillance priority.
+export const getCeilingRanking = createServerFn({ method: "GET" })
+  .inputValidator((d: { limit?: number } = {}) => ({ limit: Math.min(d?.limit ?? 25, 100) }))
+  .handler(async ({ data }): Promise<(TacticalMember & { behavioral_cluster: number | null })[]> => {
+    const rows = await q<TacticalMember & { behavioral_cluster: number | null; top_anomaly_dimensions: Record<string, number> | null }>(
+      `WITH base AS (
+         SELECT icao_hex, behavioral_cluster, profile_score, drift_score, top_anomaly_dimensions,
+                ${TACTICAL_SQL} AS tactical,
+                round(COALESCE((feature_vector->>'low_alt_ratio')::numeric,0)*100,0)::float AS low_alt_pct,
+                round(COALESCE((feature_vector->>'very_low_ratio')::numeric,0)*100,0)::float AS very_low_pct,
+                round(COALESCE((feature_vector->>'night_pct')::numeric,0),0)::float AS night_pct,
+                round(COALESCE((feature_vector->>'heading_variance')::numeric,0),0)::float AS loiter_deg,
+                round(COALESCE((feature_vector->>'masked_ratio')::numeric,0)*100,0)::float AS masked_pct
+           FROM aircraft_deep_profiles
+          WHERE profile_score >= 100 AND feature_vector IS NOT NULL
+          ORDER BY tactical DESC
+          LIMIT $1
+       )
+       ${MEMBER_SELECT.replace(
+         "SELECT d.icao_hex, d.profile_score, d.drift_score, d.top_anomaly_dimensions,",
+         "SELECT d.icao_hex, d.behavioral_cluster, d.profile_score, d.drift_score, d.top_anomaly_dimensions, d.tactical, d.low_alt_pct, d.very_low_pct, d.night_pct, d.loiter_deg, d.masked_pct,",
+       )}
+       ORDER BY d.tactical DESC`,
+      [data.limit],
+      // ceiling scan touches ~11k rows; give it room
+    );
+    return rows.map((r) => ({ ...r, top_dimensions: topDims(r.top_anomaly_dimensions) }));
+  });

@@ -3,8 +3,9 @@ import { ExportBar } from "@/components/ExportBar";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Boxes, Loader2, ChevronDown, ChevronRight } from "lucide-react";
-import { getBehaviorClusters, getClusterMembers } from "@/lib/profiler.functions";
+import { getBehaviorClusters, getClusterMembers, type ClusterSort } from "@/lib/profiler.functions";
 import { BehaviorProfile } from "@/components/BehaviorProfile";
+import { HypothesisDeck } from "@/components/HypothesisDeck";
 import { LoadErrorPanel } from "@/components/LoadErrorPanel";
 
 export const Route = createFileRoute("/clusters")({
@@ -120,24 +121,51 @@ function ClustersPage() {
   );
 }
 
+const SORTS: { key: ClusterSort; label: string }[] = [
+  { key: "tactical", label: "Surveillance priority" },
+  { key: "score", label: "Model score" },
+  { key: "drift", label: "Changing fastest" },
+  { key: "detections", label: "Most seen" },
+];
+
 function ClusterMembers({ cluster }: { cluster: number }) {
+  const [sort, setSort] = useState<ClusterSort>("tactical");
   const q = useQuery({
-    queryKey: ["cluster-members", cluster],
-    queryFn: () => getClusterMembers({ data: { cluster, limit: 40 } }),
+    queryKey: ["cluster-members", cluster, sort],
+    queryFn: () => getClusterMembers({ data: { cluster, limit: 40, sort } }),
   });
   const [icao, setIcao] = useState<string | null>(null);
-
-  if (q.isLoading) {
-    return (
-      <div className="px-4 pb-4 text-xs text-muted-foreground inline-flex items-center gap-2">
-        <Loader2 className="size-3 animate-spin" /> Loading members…
-      </div>
-    );
-  }
-  if (q.isError) return <div className="px-4 pb-4 text-xs text-destructive">Members unavailable.</div>;
+  const [deckIcao, setDeckIcao] = useState<string | null>(null);
 
   return (
     <div className="px-4 pb-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Rank by:</span>
+        {SORTS.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setSort(s.key)}
+            className={`px-2 py-1 text-[10px] uppercase tracking-widest border rounded-sm ${
+              sort === s.key ? "border-primary text-primary" : "border-border text-muted-foreground"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sort === "tactical" && (
+        <p className="text-[11px] text-muted-foreground">
+          Surveillance priority breaks ties among aircraft pinned at 100. It weighs time flying low (35%), very low
+          under 500 ft (25%), at night (20%), circling (15%) and hidden identity (5%). Ownership is never used.
+        </p>
+      )}
+      {q.isLoading && (
+        <div className="text-xs text-muted-foreground inline-flex items-center gap-2">
+          <Loader2 className="size-3 animate-spin" /> Ranking members…
+        </div>
+      )}
+      {q.isError && <div className="text-xs text-destructive">Members unavailable.</div>}
+      {q.data && (
       <div className="overflow-auto">
         <table className="w-full text-xs">
           <thead>
@@ -145,26 +173,36 @@ function ClusterMembers({ cluster }: { cluster: number }) {
               <th className="py-2 pr-3">ICAO</th>
               <th className="py-2 pr-3">Tail</th>
               <th className="py-2 pr-3">Owner</th>
-              <th className="py-2 pr-3">County</th>
+              <th className="py-2 pr-3 text-right">Priority</th>
               <th className="py-2 pr-3 text-right">Score</th>
-              <th className="py-2 pr-3 text-right">Drift</th>
-              <th className="py-2 pr-3">What stands out</th>
+              <th className="py-2 pr-3">Why</th>
               <th className="py-2" />
             </tr>
           </thead>
           <tbody>
-            {q.data?.map((m) => (
-              <tr key={m.icao_hex} className="border-b border-border/40 hover:bg-secondary/40">
+            {q.data.map((m) => (
+              <tr key={m.icao_hex} className="border-b border-border/40 hover:bg-secondary/40 align-top">
                 <td className="py-2 pr-3 font-mono neon-text-green">{m.icao_hex}</td>
                 <td className="py-2 pr-3">{m.registration || "—"}</td>
-                <td className="py-2 pr-3 text-muted-foreground truncate max-w-[220px]">{m.owner || "—"}</td>
-                <td className="py-2 pr-3 text-muted-foreground">{m.county || "—"}</td>
+                <td className="py-2 pr-3 text-muted-foreground truncate max-w-[180px]">{m.owner || "—"}</td>
+                <td className="py-2 pr-3 text-right tabular-nums neon-text-green">{m.tactical ?? "—"}</td>
                 <td className="py-2 pr-3 text-right tabular-nums neon-text-orange">{m.profile_score ?? "—"}</td>
-                <td className="py-2 pr-3 text-right tabular-nums">{m.drift_score == null ? "—" : Math.round(m.drift_score)}</td>
-                <td className="py-2 pr-3 text-muted-foreground truncate max-w-[220px]">
-                  {m.top_dimensions.join(", ") || "—"}
+                <td className="py-2 pr-3">
+                  <div className="flex flex-wrap gap-1">
+                    <Chip label="Low" v={m.low_alt_pct} unit="%" hot={50} />
+                    <Chip label="<500ft" v={m.very_low_pct} unit="%" hot={30} />
+                    <Chip label="Night" v={m.night_pct} unit="%" hot={40} />
+                    <Chip label="Circling" v={m.loiter_deg} unit="°" hot={80} />
+                    <Chip label="Hidden ID" v={m.masked_pct} unit="%" hot={5} />
+                  </div>
                 </td>
-                <td className="py-2 text-right">
+                <td className="py-2 text-right whitespace-nowrap space-x-1">
+                  <button
+                    onClick={() => setDeckIcao(deckIcao === m.icao_hex ? null : m.icao_hex)}
+                    className="px-2 py-1 text-[10px] uppercase tracking-widest border border-primary text-primary rounded-sm"
+                  >
+                    {deckIcao === m.icao_hex ? "Hide leads" : "Leads"}
+                  </button>
                   <button
                     onClick={() => setIcao(icao === m.icao_hex ? null : m.icao_hex)}
                     className="px-2 py-1 text-[10px] uppercase tracking-widest border border-accent text-accent rounded-sm"
@@ -177,8 +215,24 @@ function ClusterMembers({ cluster }: { cluster: number }) {
           </tbody>
         </table>
       </div>
+      )}
+      {deckIcao && <HypothesisDeck icao={deckIcao} title={`Leads for ${deckIcao}`} />}
       {icao && <BehaviorProfile icao={icao} />}
     </div>
+  );
+}
+
+function Chip({ label, v, unit, hot }: { label: string; v: number | null; unit: string; hot: number }) {
+  if (v == null || v === 0) return null;
+  return (
+    <span
+      className={`px-1.5 py-0.5 text-[10px] border rounded-sm tabular-nums ${
+        v >= hot ? "border-primary text-primary" : "border-border text-muted-foreground"
+      }`}
+    >
+      {label} {v}
+      {unit}
+    </span>
   );
 }
 

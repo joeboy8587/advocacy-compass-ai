@@ -81,7 +81,46 @@ async function gatewayError(res: Response): Promise<Error> {
   return e;
 }
 
+async function openaiEmbed(text: string): Promise<number[]> {
+  const k = process.env.OPENAI_API_KEY;
+  if (!k) throw new Error("No backup AI key configured");
+  const res = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 24_000), dimensions: 768 }),
+  });
+  if (!res.ok) throw new Error(`Backup embedding failed (${res.status})`);
+  const j = (await res.json()) as { data: { embedding: number[] }[] };
+  return j.data[0].embedding;
+}
+
+async function openaiRespond(system: string, user: string): Promise<string> {
+  const k = process.env.OPENAI_API_KEY;
+  if (!k) throw new Error("No backup AI key configured");
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Backup AI failed (${res.status})`);
+  const j = (await res.json()) as { choices: { message: { content: string } }[] };
+  return j.choices[0]?.message?.content ?? "";
+}
+
 export async function embed(text: string): Promise<number[]> {
+  try {
+    return await primaryEmbed(text);
+  } catch (e) {
+    console.warn("[vault] primary embed failed, using backup:", (e as Error).message);
+    return openaiEmbed(text);
+  }
+}
+
+async function primaryEmbed(text: string): Promise<number[]> {
   const res = await fetch(`${GATEWAY}/embeddings`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json", "X-Lovable-AIG-SDK": "fetch" },
@@ -166,7 +205,14 @@ List every aircraft tail/ICAO hex, company, agency, airport/place, statute/regul
 
 export async function analyzeContent(title: string, content: string): Promise<VaultAnalysis> {
   const head = content.length > 60_000 ? `${content.slice(0, 45_000)}\n...\n${content.slice(-15_000)}` : content;
-  const text = await respond(ANALYZE_SYSTEM, `File name: ${title}\n\n---\n${head}`);
+  const userMsg = `File name: ${title}\n\n---\n${head}`;
+  let text = "";
+  try {
+    text = await respond(ANALYZE_SYSTEM, userMsg);
+  } catch (e) {
+    console.warn("[vault] primary analysis failed, using backup:", (e as Error).message);
+  }
+  if (!/\{[\s\S]*\}/.test(text)) text = await openaiRespond(ANALYZE_SYSTEM, userMsg);
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("AI returned no recall card");
   const j = JSON.parse(m[0]) as Partial<VaultAnalysis>;

@@ -54,17 +54,8 @@ export const Route = createFileRoute("/")({
 });
 
 function Command() {
+  // All hooks must run on every render, before any early return.
   const { data: k, isPending, error, refetch } = useQuery(kpisOpts);
-  if (isPending) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center text-xs uppercase tracking-widest text-muted-foreground">
-        Syncing command telemetry…
-      </div>
-    );
-  }
-  if (error || !k) {
-    return <LoadErrorPanel error={error} reset={() => void refetch()} title="Command center didn't load" autoRetry={false} />;
-  }
   const alerts = useQuery({
     queryKey: ["recent-alerts", 15],
     queryFn: () => getRecentAlerts({ data: { limit: 15 } }),
@@ -80,6 +71,16 @@ function Command() {
     queryFn: () => getTopOffenders(),
     refetchInterval: 120_000,
   });
+  if (isPending) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center text-xs uppercase tracking-widest text-muted-foreground">
+        Syncing command telemetry…
+      </div>
+    );
+  }
+  if (error || !k) {
+    return <LoadErrorPanel error={error} reset={() => void refetch()} title="Command center didn't load" autoRetry={false} />;
+  }
 
   return (
     <div className="p-6 space-y-6">

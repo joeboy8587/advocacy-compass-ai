@@ -252,7 +252,10 @@ function LeadCard({
   return (
     <div className={`border rounded-sm p-3 space-y-2 ${lead.verdict === "NOT_USEFUL" ? "opacity-55" : ""}`}>
       <div className="flex items-start justify-between gap-2">
-        <div className="text-xs font-medium">{lead.title}</div>
+        <div className="text-xs font-medium">
+          {lead.item_kind === "question" && <span className="text-accent mr-1">Q:</span>}
+          {lead.title}
+        </div>
         <span
           className={`text-[9px] uppercase tracking-widest border rounded-sm px-1.5 py-0.5 shrink-0 ${STRENGTH_STYLE[lead.strength]}`}
         >
@@ -260,13 +263,22 @@ function LeadCard({
         </span>
       </div>
 
-      <p className="text-[11px] text-muted-foreground leading-snug">{lead.meaning}</p>
+      {lead.item_kind === "question" && lead.answer ? (
+        <p className="text-[12px] leading-snug">
+          <span className="text-[10px] uppercase tracking-widest text-accent mr-1">Answer:</span>
+          {lead.answer}
+        </p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground leading-snug">{lead.meaning}</p>
+      )}
 
+      {lead.item_kind !== "question" && (
       <div className="text-[11px] text-muted-foreground">
         Seen <b className="text-foreground">{lead.events.toLocaleString()}</b> time{lead.events === 1 ? "" : "s"}
         {lead.confidence != null && <> · machine certainty {Math.round(lead.confidence * 100)}%</>}
         {lead.latest && <> · most recent {when(lead.latest)}</>}
       </div>
+      )}
 
       {lead.detail && <p className="text-[11px] text-muted-foreground/80 leading-snug">{lead.detail}</p>}
 

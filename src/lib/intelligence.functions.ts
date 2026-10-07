@@ -150,7 +150,9 @@ function strength(confidence: number | null, events: number): "STRONG" | "MODERA
 export type Verdict = "CONFIRMED" | "REVIEW" | "NOT_USEFUL";
 
 export type DeckLead = {
-  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap" | "signal" | "frames" | "profile";
+  item_kind: "hypothesis" | "relay" | "pattern" | "shell_alignment" | "orbit" | "kinematic" | "idswap" | "signal" | "frames" | "profile" | "question";
+  question?: string | null;
+  answer?: string | null;
   item_key: string;
   type: string;
   title: string;
@@ -539,6 +541,17 @@ async function loadDeck(
     console.warn("[deck] detection upgrades failed", (e as Error).message);
   }
 
+  // Investigator questions answered from the aircraft's stored behaviour fingerprint.
+  // These always have an answer, even when the live detectors are outside their
+  // 30-day window, so the deck never shows a blank for a scored aircraft.
+  if (icaos.length <= 2) {
+    try {
+      for (const q of await answerQuestions(primary)) push(q);
+    } catch (e) {
+      console.warn("[deck] question answers failed", (e as Error).message);
+    }
+  }
+
   const order = { STRONG: 0, MODERATE: 1, WEAK: 2 } as const;
   leads.sort((a, b) => order[a.strength] - order[b.strength] || b.events - a.events);
 
@@ -550,6 +563,123 @@ async function loadDeck(
   };
 
   return { icaos, label, leads: leads.slice(0, 40), memory: memRows, counts, generated_at: new Date().toISOString() };
+}
+
+type Fv = Record<string, number | undefined>;
+
+function fmtDate(iso: string | null | undefined) {
+  if (!iso) return "unknown";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? String(iso)
+    : d.toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) + " Pacific";
+}
+
+async function answerQuestions(icao: string): Promise<Omit<DeckLead, "verdict" | "note" | "reviewed_at">[]> {
+  const [prof, ap, fm, cases, vault] = await Promise.all([
+    neonQuery<{ behavioral_cluster: number | null; profile_score: number | null; drift_score: number | null; feature_vector: Fv | null; window_end: string | null }>(
+      `SELECT behavioral_cluster, profile_score, drift_score, feature_vector, window_end::text
+         FROM aircraft_deep_profiles WHERE lower(icao_hex) = $1 LIMIT 1`, [icao]).catch(() => []),
+    neonQuery<{ first_seen: string | null; last_seen: string | null; total_detections: number | null; centroid_lat: string | null; centroid_lon: string | null; primary_county: string | null; observed_registration: string | null; registered_owner: string | null }>(
+      `SELECT first_seen::text, last_seen::text, total_detections, centroid_lat::text, centroid_lon::text,
+              primary_county, observed_registration, registered_owner
+         FROM aircraft_profiles WHERE upper(icao_hex) = upper($1)
+        ORDER BY total_detections DESC NULLS LAST LIMIT 1`, [icao]).catch(() => []),
+    neonQuery<{ n_number: string | null; name: string | null; city: string | null; state: string | null }>(
+      `SELECT n_number, name, city, state FROM faa_master WHERE mode_s_code_hex = upper($1) LIMIT 1`, [icao]).catch(() => []),
+    neonQuery<{ case_id: string; status: string | null }>(
+      `SELECT case_id, status FROM cases
+        WHERE lower(COALESCE(subject_icao,'')) = $1
+           OR EXISTS (SELECT 1 FROM unnest(COALESCE(related_icaos,'{}'::text[])) x WHERE lower(x) = $1)
+        LIMIT 5`, [icao]).catch(() => []),
+    neonQuery<{ n: number }>(
+      `SELECT count(DISTINCT m.item_id)::int AS n FROM vault_entities e JOIN vault_mentions m ON m.entity_id = e.id
+        WHERE e.entity_type = 'aircraft' AND e.canonical_key = upper($1)`, [icao]).catch(() => [{ n: 0 }]),
+  ]);
+  const p = prof[0];
+  const a = ap[0];
+  const f = fm[0];
+  const fv: Fv = p?.feature_vector ?? {};
+  const num = (k: string) => (typeof fv[k] === "number" ? (fv[k] as number) : null);
+  const pct = (k: string, already = false) => { const v = num(k); return v == null ? null : Math.round(already ? v : v * 100); };
+  const latest = a?.last_seen ?? p?.window_end ?? null;
+  const out: Omit<DeckLead, "verdict" | "note" | "reviewed_at">[] = [];
+  const add = (key: string, question: string, answer: string, strength: DeckLead["strength"], extra: Partial<DeckLead> = {}) =>
+    out.push({
+      item_kind: "question", item_key: `q:${icao}:${key}`, type: `QUESTION_${key.toUpperCase()}`,
+      title: question, meaning: answer, question, answer, rule: null, events: num("det_count") ?? a?.total_detections ?? 0,
+      confidence: null, strength, latest, detail: null, partner_icao: null, ...extra,
+    });
+
+  if (!p && !a) return out;
+
+  // 1. When and where
+  const where = a?.centroid_lat && a?.centroid_lon
+    ? `centred near ${Number(a.centroid_lat).toFixed(3)}, ${Number(a.centroid_lon).toFixed(3)}${a.primary_county && a.primary_county !== "OTHER" ? ` (${a.primary_county} County)` : " (outside the counties we name)"}`
+    : "location not recorded";
+  add("when", "When and where was it seen?",
+    `Seen ${a?.total_detections ?? num("det_count") ?? "an unknown number of"} times between ${fmtDate(a?.first_seen)} and ${fmtDate(a?.last_seen)}, ${where}. Across all our records it has ${num("lifetime_detections") ?? "an unknown number of"} sightings.`,
+    "WEAK", { detail: latest && Date.now() - new Date(latest).getTime() > 30 * 864e5 ? "This is older than the 30-day window the live circling and signal checks look at, so those checks have nothing new to say about it — these answers come from its stored behaviour record." : null });
+
+  // 2. Low flying
+  const low = pct("low_alt_ratio"), vlow = pct("very_low_ratio");
+  if (low != null) {
+    add("low", "Did it fly low?",
+      low === 0 ? `No. None of its sightings were below the low-altitude line. Average height ${Math.round(num("avg_altitude") ?? 0).toLocaleString()} ft.`
+        : `Yes. ${low}% of its sightings were below the low-altitude line and ${vlow ?? 0}% were very low. Average height ${Math.round(num("avg_altitude") ?? 0).toLocaleString()} ft, highest ${Math.round(num("max_altitude") ?? 0).toLocaleString()} ft.`,
+      (vlow ?? 0) >= 50 ? "STRONG" : (low ?? 0) >= 30 ? "MODERATE" : "WEAK",
+      { rule: low > 0 ? "14 CFR § 91.119 — minimum safe altitudes" : null, confidence: low / 100 });
+  }
+
+  // 3. Night
+  const night = pct("night_pct", true);
+  if (night != null) {
+    add("night", "Did it fly at night?",
+      night === 0 ? "No. All of its sightings were in daylight hours." : `${night}% of its sightings were at night (10pm–6am). ${num("weekend_pct") ? `${Math.round(num("weekend_pct")!)}% were on weekends.` : "None were on weekends."}`,
+      night >= 75 ? "STRONG" : night >= 30 ? "MODERATE" : "WEAK", { confidence: night / 100 });
+  }
+
+  // 4. Circling / holding
+  const hv = num("heading_variance"), minSp = num("min_speed"), avgSp = num("avg_speed");
+  if (hv != null) {
+    const circling = hv >= 80;
+    add("circle", "Did it circle or hold over one spot?",
+      circling
+        ? `Its direction kept changing (heading spread ${Math.round(hv)}°), the shape of circling or hovering rather than travelling.${minSp != null && minSp < 20 ? ` Its speed dropped as low as ${Math.round(minSp)} knots, which means it slowed to a near-hover.` : ""}${avgSp != null ? ` Average speed ${Math.round(avgSp)} knots.` : ""}`
+        : `Mostly straight-line flight (heading spread ${Math.round(hv)}°).${avgSp != null ? ` Average speed ${Math.round(avgSp)} knots.` : ""}`,
+      circling && (minSp ?? 99) < 20 ? "STRONG" : circling ? "MODERATE" : "WEAK");
+  }
+
+  // 5. Identity
+  const military = (num("is_military") ?? 0) > 0;
+  const reg = f?.n_number ? `N${f.n_number}` : a?.observed_registration || null;
+  add("who", "Who is it registered to?",
+    f?.name
+      ? `The FAA registry lists ${f.name}${f.city ? ` of ${f.city}, ${f.state ?? ""}` : ""}${reg ? ` (${reg})` : ""}. Ownership is background only — it is judged on how it flies.`
+      : `It is not in the public FAA civil registry.${a?.observed_registration ? ` It broadcast the identifier "${a.observed_registration}".` : ""}${military ? " Its transponder code sits in the block assigned to U.S. military/state aircraft." : ""} Being unlisted does not clear it or condemn it — it is judged on how it flies.`,
+    !f?.name ? "MODERATE" : "WEAK");
+
+  // 6. Hidden identity
+  const masked = pct("masked_ratio");
+  if (masked != null) {
+    add("masked", "Did it hide its identity?",
+      masked === 0 ? "No. It broadcast its identity on every sighting." : `On ${masked}% of sightings its identity was withheld or blanked.`,
+      masked >= 20 ? "STRONG" : masked >= 5 ? "MODERATE" : "WEAK");
+  }
+
+  // 7. Model view
+  if (p) {
+    add("model", "How unusual does the behaviour model think it is?",
+      `Behaviour score ${p.profile_score ?? "—"}/100 in group ${p.behavioral_cluster ?? "—"}${(p.profile_score ?? 0) >= 100 ? " — pinned at the ceiling, so it is at least this unusual" : ""}. The detection pipeline flagged it ${num("anomaly_count") ?? 0} time(s), worst flag ${num("max_anomaly_score") ?? 0}/100.`,
+      (num("anomaly_count") ?? 0) >= 3 ? "MODERATE" : "WEAK");
+  }
+
+  // 8. Our files
+  add("files", "Is it in any case or in our files?",
+    `${cases.length ? `Open in case${cases.length > 1 ? "s" : ""} ${cases.map((c) => c.case_id).join(", ")}.` : "Not attached to any case yet."} ${vault[0]?.n ? `${vault[0].n} file(s) in the Intelligence Vault mention it.` : "No file in the Intelligence Vault mentions it yet."}`,
+    "WEAK");
+
+  return out;
 }
 
 // mission_hypotheses.reasoning_chain is a JSON blob. Pull only the human-readable bits.

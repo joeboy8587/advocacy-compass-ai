@@ -6,7 +6,7 @@ let ensured = false;
 export async function ensurePodcastTable() {
   if (ensured) return;
   await neonExecScript(`
-    CREATE TABLE IF NOT EXISTS podcast_episodes (
+    CREATE TABLE IF NOT EXISTS narrative_podcasts (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       narrative_id integer NOT NULL,
       narrative_date text NOT NULL,
@@ -17,7 +17,7 @@ export async function ensurePodcastTable() {
       voice_provider text,
       created_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE INDEX IF NOT EXISTS podcast_episodes_narr_idx ON podcast_episodes (narrative_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS narrative_podcasts_narr_idx ON narrative_podcasts (narrative_id, created_at DESC);
   `);
   ensured = true;
 }

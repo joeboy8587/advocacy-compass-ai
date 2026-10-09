@@ -18,7 +18,7 @@ export const listPodcasts = createServerFn({ method: "GET" }).handler(async (): 
   const rows = await neonQuery<Omit<PodcastEpisode, "hosts">>(
     `SELECT DISTINCT ON (narrative_id) id::text, narrative_id, narrative_date, script, sha256,
             script_provider, voice_provider, created_at::text
-       FROM podcast_episodes ORDER BY narrative_id, created_at DESC`,
+       FROM narrative_podcasts ORDER BY narrative_id, created_at DESC`,
   );
   return rows.map((r) => ({ ...r, hosts: HOST_NAMES }));
 });
@@ -41,7 +41,7 @@ export const generatePodcast = createServerFn({ method: "POST" })
       const audio = await m.voiceScript(lines);
       const sha = await m.sha256Hex(audio);
       const ins = await m.neonQuery<{ id: string }>(
-        `INSERT INTO podcast_episodes (narrative_id, narrative_date, script, audio_b64, sha256, script_provider, voice_provider)
+        `INSERT INTO narrative_podcasts (narrative_id, narrative_date, script, audio_b64, sha256, script_provider, voice_provider)
          VALUES ($1, $2, $3::jsonb, $4, $5, $6, 'openai') RETURNING id::text`,
         [data.narrativeId, n[0].narrative_date, JSON.stringify(lines), m.toB64(audio), sha, provider],
       );

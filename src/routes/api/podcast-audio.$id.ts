@@ -8,7 +8,7 @@ export const Route = createFileRoute("/api/podcast-audio/$id")({
         if (!/^[0-9a-f-]{36}$/i.test(params.id)) return new Response("Not found", { status: 404 });
         const { neonQuery } = await import("@/lib/neon.server");
         const rows = await neonQuery<{ audio_b64: string; narrative_date: string }>(
-          `SELECT audio_b64, narrative_date FROM podcast_episodes WHERE id = $1`,
+          `SELECT audio_b64, narrative_date FROM narrative_podcasts WHERE id = $1`,
           [params.id],
         );
         if (!rows[0]) return new Response("Not found", { status: 404 });

@@ -1,7 +1,8 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Newspaper, RefreshCw, Sparkles, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import { Newspaper, RefreshCw, Sparkles, ChevronDown, ChevronRight, Copy, Check, Mic, Download } from "lucide-react";
+import { generatePodcast, listPodcasts, type PodcastEpisode } from "@/lib/podcast.functions";
 import {
   ensureTodayNarrative,
   getRecentNarratives,
@@ -163,6 +164,7 @@ function NarrativeCard({ row, defaultOpen }: { row: NarrativeRow; defaultOpen: b
       </button>
       {open && (
         <div className="px-4 pb-5 pt-1 border-t border-border">
+          <PodcastPanel narrativeId={row.id} />
           <div className="flex items-center justify-end mb-3">
             <CopyButton text={row.narrative_md} />
           </div>
@@ -170,6 +172,69 @@ function NarrativeCard({ row, defaultOpen }: { row: NarrativeRow; defaultOpen: b
         </div>
       )}
     </article>
+  );
+}
+
+function PodcastPanel({ narrativeId }: { narrativeId: number }) {
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: ["podcasts"], queryFn: () => listPodcasts(), staleTime: 60_000 });
+  const ep: PodcastEpisode | undefined = list.data?.find((e) => e.narrative_id === narrativeId);
+  const [showScript, setShowScript] = useState(false);
+  const gen = useMutation({
+    mutationFn: () => generatePodcast({ data: { narrativeId } }),
+    onSuccess: (r) => {
+      if (r.ok) void qc.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+  const err = gen.data && !gen.data.ok ? gen.data.error : gen.error ? (gen.error as Error).message : null;
+
+  return (
+    <div className="my-3 rounded-sm border border-border p-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[11px] uppercase tracking-widest text-accent flex items-center gap-2">
+          <Mic className="size-3.5" /> Audio briefing
+        </div>
+        <button
+          disabled={gen.isPending}
+          onClick={() => gen.mutate()}
+          className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-2.5 py-1.5 rounded-sm border border-accent/40 text-accent hover:bg-accent/10 disabled:opacity-50"
+        >
+          {gen.isPending ? <RefreshCw className="size-3 animate-spin" /> : <Mic className="size-3" />}
+          {gen.isPending ? "Recording… about 1 minute" : ep ? "Re-record" : "Make podcast"}
+        </button>
+      </div>
+      {!ep && !gen.isPending && (
+        <p className="text-[11px] text-muted-foreground">
+          Turns this narrative into a short two-voice briefing you can listen to or share.
+        </p>
+      )}
+      {err && <p className="text-[11px] text-destructive">{err}</p>}
+      {ep && (
+        <>
+          <audio key={ep.id} controls preload="none" src={`/api/podcast-audio/${ep.id}`} className="w-full" />
+          <div className="flex flex-wrap items-center gap-3 text-[10px] uppercase tracking-widest text-muted-foreground">
+            <span>Hosts: {ep.hosts.A} &amp; {ep.hosts.B}</span>
+            <span className="font-mono normal-case">sha256:{ep.sha256.slice(0, 10)}…</span>
+            <a href={`/api/podcast-audio/${ep.id}`} download className="inline-flex items-center gap-1 hover:text-accent">
+              <Download className="size-3" /> Download
+            </a>
+            <button onClick={() => setShowScript((v) => !v)} className="hover:text-accent">
+              {showScript ? "Hide script" : "Show script"}
+            </button>
+          </div>
+          {showScript && (
+            <div className="space-y-1.5 pt-1">
+              {ep.script.map((l, i) => (
+                <p key={i} className="text-xs leading-relaxed">
+                  <span className="text-accent font-semibold mr-1">{l.speaker === "A" ? ep.hosts.A : ep.hosts.B}:</span>
+                  {l.text}
+                </p>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

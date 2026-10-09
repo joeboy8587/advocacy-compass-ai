@@ -178,7 +178,7 @@ function NarrativeCard({ row, defaultOpen }: { row: NarrativeRow; defaultOpen: b
 function PodcastPanel({ narrativeId }: { narrativeId: number }) {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ["podcasts"], queryFn: () => listPodcasts(), staleTime: 60_000 });
-  const ep: PodcastEpisode | undefined = list.data?.find((e) => e.narrative_id === narrativeId);
+  const ep: PodcastEpisode | undefined = list.data?.find((e) => Number(e.narrative_id) === Number(narrativeId));
   const [showScript, setShowScript] = useState(false);
   const gen = useMutation({
     mutationFn: () => generatePodcast({ data: { narrativeId } }),

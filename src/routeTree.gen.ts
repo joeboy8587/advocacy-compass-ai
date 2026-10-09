@@ -29,6 +29,7 @@ import { Route as VaultRouteImport } from './routes/vault'
 import { Route as ViolationsRouteImport } from './routes/violations'
 import { Route as CasesCaseIdRouteImport } from './routes/cases.$caseId'
 import { Route as CasesNewRouteImport } from './routes/cases.new'
+import { Route as ApiPodcastAudioIdRouteImport } from './routes/api/podcast-audio.$id'
 import { Route as ApiScreenshotImageIdRouteImport } from './routes/api/screenshot-image.$id'
 import { Route as CasesCaseIdBriefRouteImport } from './routes/cases_.$caseId.brief'
 import { Route as ApiPublicOsintNightlyRouteImport } from './routes/api/public/osint.nightly'
@@ -133,6 +134,11 @@ const CasesNewRoute = CasesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => CasesRoute,
 } as any)
+const ApiPodcastAudioIdRoute = ApiPodcastAudioIdRouteImport.update({
+  id: '/api/podcast-audio/$id',
+  path: '/api/podcast-audio/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiScreenshotImageIdRoute = ApiScreenshotImageIdRouteImport.update({
   id: '/api/screenshot-image/$id',
   path: '/api/screenshot-image/$id',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
+  '/api/podcast-audio/$id': typeof ApiPodcastAudioIdRoute
   '/api/screenshot-image/$id': typeof ApiScreenshotImageIdRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
   '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
@@ -195,6 +202,7 @@ export interface FileRoutesByTo {
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
+  '/api/podcast-audio/$id': typeof ApiPodcastAudioIdRoute
   '/api/screenshot-image/$id': typeof ApiScreenshotImageIdRoute
   '/cases/$caseId/brief': typeof CasesCaseIdBriefRoute
   '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
@@ -221,6 +229,7 @@ export interface FileRoutesById {
   '/violations': typeof ViolationsRoute
   '/cases/$caseId': typeof CasesCaseIdRoute
   '/cases/new': typeof CasesNewRoute
+  '/api/podcast-audio/$id': typeof ApiPodcastAudioIdRoute
   '/api/screenshot-image/$id': typeof ApiScreenshotImageIdRoute
   '/cases_/$caseId/brief': typeof CasesCaseIdBriefRoute
   '/api/public/osint/nightly': typeof ApiPublicOsintNightlyRoute
@@ -248,6 +257,7 @@ export interface FileRouteTypes {
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
+    | '/api/podcast-audio/$id'
     | '/api/screenshot-image/$id'
     | '/cases/$caseId/brief'
     | '/api/public/osint/nightly'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
+    | '/api/podcast-audio/$id'
     | '/api/screenshot-image/$id'
     | '/cases/$caseId/brief'
     | '/api/public/osint/nightly'
@@ -298,6 +309,7 @@ export interface FileRouteTypes {
     | '/violations'
     | '/cases/$caseId'
     | '/cases/new'
+    | '/api/podcast-audio/$id'
     | '/api/screenshot-image/$id'
     | '/cases_/$caseId/brief'
     | '/api/public/osint/nightly'
@@ -322,6 +334,7 @@ export interface RootRouteChildren {
   SpoofingRoute: typeof SpoofingRoute
   VaultRoute: typeof VaultRoute
   ViolationsRoute: typeof ViolationsRoute
+  ApiPodcastAudioIdRoute: typeof ApiPodcastAudioIdRoute
   ApiScreenshotImageIdRoute: typeof ApiScreenshotImageIdRoute
   CasesCaseIdBriefRoute: typeof CasesCaseIdBriefRoute
   ApiPublicOsintNightlyRoute: typeof ApiPublicOsintNightlyRoute
@@ -469,6 +482,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CasesNewRouteImport
       parentRoute: typeof CasesRoute
     }
+    '/api/podcast-audio/$id': {
+      id: '/api/podcast-audio/$id'
+      path: '/api/podcast-audio/$id'
+      fullPath: '/api/podcast-audio/$id'
+      preLoaderRoute: typeof ApiPodcastAudioIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/screenshot-image/$id': {
       id: '/api/screenshot-image/$id'
       path: '/api/screenshot-image/$id'
@@ -524,6 +544,7 @@ const rootRouteChildren: RootRouteChildren = {
   SpoofingRoute: SpoofingRoute,
   VaultRoute: VaultRoute,
   ViolationsRoute: ViolationsRoute,
+  ApiPodcastAudioIdRoute: ApiPodcastAudioIdRoute,
   ApiScreenshotImageIdRoute: ApiScreenshotImageIdRoute,
   CasesCaseIdBriefRoute: CasesCaseIdBriefRoute,
   ApiPublicOsintNightlyRoute: ApiPublicOsintNightlyRoute,

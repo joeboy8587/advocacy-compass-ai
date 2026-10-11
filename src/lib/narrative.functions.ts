@@ -57,6 +57,8 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
           (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AS detections,
           (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AS unique_aircraft,
           (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND altitude_ft < 500 AND on_ground = false) AS low_alt_passes,
+          (SELECT count(*)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND altitude_ft < 1000 AND on_ground = false) AS under_1000ft_passes,
+          (SELECT count(DISTINCT icao_hex)::int FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2 AND altitude_ft < 1000 AND on_ground = false) AS under_1000ft_aircraft,
           (SELECT count(*)::int FROM aoi_alerts WHERE icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AND captured_at BETWEEN $1 AND $2) AS alerts,
           (SELECT count(*)::int FROM aoi_alerts WHERE icao_hex IN (SELECT DISTINCT icao_hex FROM detections WHERE county = 'KERN' AND captured_at BETWEEN $1 AND $2) AND captured_at BETWEEN $1 AND $2 AND alert_level='CRITICAL') AS critical_alerts,
          (SELECT count(*)::int FROM anomaly_events WHERE upper(county) = 'KERN' AND detected_at BETWEEN $1 AND $2) AS anomalies,
@@ -66,7 +68,9 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
         [from, to],
       )),
       safe(() => neonQuery<{ operator: string | null; detections: number; low_alt: number; kcso: boolean }>(
-        `SELECT COALESCE(o.operator_resolved, o.faa_registrant_name, fm.name) AS operator,
+        `SELECT COALESCE(fm.name, o.operator_resolved, o.faa_registrant_name,
+                  CASE WHEN lower(d.icao_hex) ~ '^a' THEN 'US address — NOT in FAA master registry'
+                       ELSE 'Foreign / non-US address (outside FAA registry)' END) AS operator,
                 count(*)::int AS detections,
                 count(*) FILTER (WHERE d.altitude_ft < 500 AND d.on_ground = false)::int AS low_alt,
                 bool_or(COALESCE(o.kcso_flag,false)) AS kcso
@@ -79,7 +83,7 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
       )),
       safe(() => neonQuery<{ registration: string | null; icao_hex: string; operator: string | null; alerts: number; last_seen: string }>(
         `SELECT a.registration, a.icao_hex,
-                COALESCE(o.operator_resolved, o.faa_registrant_name, fm.name) AS operator,
+                COALESCE(fm.name, o.operator_resolved, o.faa_registrant_name) AS operator,
                 count(*)::int AS alerts,
                 MAX(a.captured_at)::text AS last_seen
          FROM aoi_alerts a
@@ -180,7 +184,7 @@ OUTPUT STRUCTURE (markdown, EXACTLY these H2 sections, in order, nothing else):
 One sentence. Aggressive. Names the pattern (stack, spoofing campaign, shell-company orbit) and the county. No hedging.
 
 ## Airspace Summary
-Volume, unique aircraft, low-altitude passes, KCSO/LAPD, military. Compute unidentified-operator % if the data is present and call it "anonymized surveillance infrastructure". Numbers with framing ("elevated", "saturated", "quiet"), never neutral.
+Volume, unique aircraft, low-altitude passes, KCSO/LAPD, military. Report low_alt_passes (<500 ft) AND under_1000ft_passes / under_1000ft_aircraft (<1,000 ft) separately — never say "zero low-altitude" if under_1000ft_passes > 0. Owners come from the FAA master registry first; label aircraft exactly as the data does ("US address — NOT in FAA master registry" or "Foreign / non-US address") and never call a missing owner "null" or invent a name for it. Numbers with framing ("elevated", "saturated", "quiet"), never neutral.
 
 ## Anomalies & Alerts
 For each anomaly type in the snapshot: count + plain-English translation using the REQUIRED SUBSTITUTIONS above. Name the tail number when the snapshot names one. Say what CFR section the pattern breaches.

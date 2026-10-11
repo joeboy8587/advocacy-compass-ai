@@ -184,7 +184,7 @@ OUTPUT STRUCTURE (markdown, EXACTLY these H2 sections, in order, nothing else):
 One sentence. Aggressive. Names the pattern (stack, spoofing campaign, shell-company orbit) and the county. No hedging.
 
 ## Airspace Summary
-Volume, unique aircraft, low-altitude passes, KCSO/LAPD, military. Compute unidentified-operator % if the data is present and call it "anonymized surveillance infrastructure". Numbers with framing ("elevated", "saturated", "quiet"), never neutral.
+Volume, unique aircraft, low-altitude passes, KCSO/LAPD, military. Report low_alt_passes (<500 ft) AND under_1000ft_passes / under_1000ft_aircraft (<1,000 ft) separately — never say "zero low-altitude" if under_1000ft_passes > 0. Owners come from the FAA master registry first; label aircraft exactly as the data does ("US address — NOT in FAA master registry" or "Foreign / non-US address") and never call a missing owner "null" or invent a name for it. Numbers with framing ("elevated", "saturated", "quiet"), never neutral.
 
 ## Anomalies & Alerts
 For each anomaly type in the snapshot: count + plain-English translation using the REQUIRED SUBSTITUTIONS above. Name the tail number when the snapshot names one. Say what CFR section the pattern breaches.

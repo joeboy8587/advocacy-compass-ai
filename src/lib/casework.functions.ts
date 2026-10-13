@@ -574,7 +574,7 @@ export const corroborateCase = createServerFn({ method: "POST" })
     if (icao && convIds.length === 0) {
       const convs = await neonQuery<{ id: string }>(
         `SELECT id::text FROM convergence_events
-          WHERE icao_hex = $1 OR icao24 = $1 LIMIT 500`,
+          WHERE unique_icao_hexes @> ARRAY[upper($1)]::text[] ORDER BY detected_at DESC LIMIT 500`,
         [icao],
       ).catch(() => [] as { id: string }[]);
       let found = convs;
@@ -879,7 +879,7 @@ export const autoBuildCase = createServerFn({ method: "POST" })
         ? safe(
             q<{ id: string }>(
               `SELECT id::text FROM convergence_events
-                WHERE icao_hex = $1 OR icao24 = $1 LIMIT 500`,
+                WHERE unique_icao_hexes @> ARRAY[upper($1)]::text[] ORDER BY detected_at DESC LIMIT 500`,
               [icao],
             ),
           )

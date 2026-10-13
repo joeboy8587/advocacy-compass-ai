@@ -80,7 +80,7 @@ export const getSubjectDossier = createServerFn({ method: "GET" })
         ) t
       ),
       vio AS (
-        SELECT count(*)::int AS n FROM violation_classifications WHERE icao_hex = $1
+        SELECT count(*)::int AS n FROM violation_classifications WHERE icao_hex IN (upper($1), lower($1))
       ),
       reg AS (
         SELECT name AS owner, city AS owner_city, state AS owner_state, type_registrant,
@@ -232,7 +232,7 @@ export const getSubjectTimeline = createServerFn({ method: "GET" })
       (SELECT captured_at AS ts, 'VIOLATION'::text AS kind,
               rule_violated AS label, altitude_ft, NULL, NULL, NULL,
               NULL, detection_id::text
-       FROM violation_classifications WHERE icao_hex = $1 AND captured_at > now() - ($2 || ' hours')::interval
+       FROM violation_classifications WHERE icao_hex IN (upper($1), lower($1)) AND captured_at > now() - ($2 || ' hours')::interval
        ORDER BY captured_at DESC LIMIT 200)
       UNION ALL
       (SELECT captured_at AS ts, 'ALERT'::text AS kind,
@@ -870,7 +870,7 @@ export const autoBuildCase = createServerFn({ method: "POST" })
         ? safe(
             q<{ id: string }>(
               `SELECT detection_id::text AS id FROM violation_classifications
-                WHERE icao_hex = $1 LIMIT 1000`,
+                WHERE icao_hex IN (upper($1), lower($1)) LIMIT 1000`,
               [icao],
             ),
           )

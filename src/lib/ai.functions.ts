@@ -205,7 +205,7 @@ export const draftCaseBrief = createServerFn({ method: "POST" })
     const vios = c.subject_icao
       ? await neonQuery(
           `SELECT rule_violated, owner_name, owner_city, owner_state, aircraft_mfr, aircraft_model
-           FROM violation_classifications WHERE icao_hex = $1 LIMIT 10`,
+           FROM violation_classifications WHERE icao_hex IN (upper($1), lower($1)) LIMIT 10`,
           [c.subject_icao],
         )
       : [];

@@ -220,29 +220,29 @@ export const getSubjectTimeline = createServerFn({ method: "GET" })
               altitude_ft, county, latitude::float, longitude::float,
               CASE WHEN is_91_227_violator THEN 'LOW_ALT' WHEN is_military THEN 'MIL' ELSE NULL END AS severity,
               id::text AS detection_id
-       FROM detections WHERE icao_hex = $1 AND captured_at > now() - ($2 || ' hours')::interval
+       FROM detections WHERE icao_hex = $1 AND captured_at > (SELECT COALESCE(max(captured_at), now()) FROM detections WHERE icao_hex = $1) - ($2 || ' hours')::interval
        ORDER BY captured_at DESC LIMIT 500)
       UNION ALL
       (SELECT detected_at AS ts, 'ANOMALY'::text AS kind,
               anomaly_type AS label, NULL, county, NULL, NULL,
-              confidence_level::text, NULL
-       FROM ml_anomaly_detections WHERE lower(icao24) = lower($1) AND detected_at > now() - ($2 || ' hours')::interval
+              NULL::text, NULL
+       FROM anomaly_events WHERE icao_hex IN ($1, lower($1)) AND detected_at > (SELECT COALESCE(max(captured_at), now()) FROM detections WHERE icao_hex = $1) - ($2 || ' hours')::interval
        ORDER BY detected_at DESC LIMIT 200)
       UNION ALL
       (SELECT captured_at AS ts, 'VIOLATION'::text AS kind,
               rule_violated AS label, altitude_ft, NULL, NULL, NULL,
               NULL, detection_id::text
-       FROM violation_classifications WHERE icao_hex IN (upper($1), lower($1)) AND captured_at > now() - ($2 || ' hours')::interval
+       FROM violation_classifications WHERE icao_hex IN (upper($1), lower($1)) AND captured_at > (SELECT COALESCE(max(captured_at), now()) FROM detections WHERE icao_hex = $1) - ($2 || ' hours')::interval
        ORDER BY captured_at DESC LIMIT 200)
       UNION ALL
       (SELECT captured_at AS ts, 'ALERT'::text AS kind,
               reason AS label, altitude_ft, NULL, NULL, NULL,
               alert_level::text, NULL
-       FROM aoi_alerts WHERE icao_hex = $1 AND captured_at > now() - ($2 || ' hours')::interval
+       FROM aoi_alerts WHERE icao_hex = $1 AND captured_at > (SELECT COALESCE(max(captured_at), now()) FROM detections WHERE icao_hex = $1) - ($2 || ' hours')::interval
        ORDER BY captured_at DESC LIMIT 200)
       ORDER BY ts DESC LIMIT 800
       `,
-      [data.icao, String(hours)],
+      [data.icao.toUpperCase(), String(hours)],
     );
     return rows;
   });
@@ -274,7 +274,7 @@ export const getCoFliers = createServerFn({ method: "GET" })
         SELECT captured_at, latitude::float AS lat, longitude::float AS lon
         FROM detections
         WHERE icao_hex = $1
-          AND captured_at > now() - ($2 || ' hours')::interval
+          AND captured_at > (SELECT COALESCE(max(captured_at), now()) FROM detections WHERE icao_hex = $1) - ($2 || ' hours')::interval
           AND latitude IS NOT NULL AND longitude IS NOT NULL
         ORDER BY captured_at DESC
         LIMIT 300
@@ -314,7 +314,7 @@ export const getCoFliers = createServerFn({ method: "GET" })
       ORDER BY encounter_count DESC, min_dist_km ASC
       LIMIT 30
       `,
-      [data.icao, String(hours), radiusKm, String(windowSec)],
+      [data.icao.toUpperCase(), String(hours), radiusKm, String(windowSec)],
     );
     return rows;
   });

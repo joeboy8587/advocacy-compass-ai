@@ -37,7 +37,7 @@ Rules:
 - Neutral, population-scale framing. Never say "targeting", "stalking", "conspiracy". Never name private individuals.
 - Never dismiss an aircraft because of who owns it; judge by how it flew.
 - 14 to 22 lines total, each line 1-3 sentences. Open with the date, close with: "All data is from public sources and can be checked by anyone."
-Return ONLY JSON: {"lines":[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]}`;
+Return ONLY JSON: {"lines":[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]}";
 
 export async function writeScript(narrativeDate: string, narrativeMd: string): Promise<{ lines: ScriptLine[]; provider: string }> {
   const { generateTextWithFallback } = await import("./ai-fallback.server");
@@ -47,10 +47,49 @@ export async function writeScript(narrativeDate: string, narrativeMd: string): P
     prompt: `Date: ${narrativeDate}\n\nDAILY NARRATIVE:\n${narrativeMd.slice(0, 20_000)}`,
     tools: false,
   });
+
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("The script writer didn't return a script. Try again.");
-  const j = JSON.parse(m[0]) as { lines?: Array<{ speaker?: string; text?: string }> };
-  const lines = (j.lines ?? [])
+
+  // Attempt to parse the JSON block returned by the model. Model output can sometimes
+  // include trailing commas, smart quotes, or unquoted keys which break JSON.parse.
+  // Try a progressive repair strategy before failing so the UI is more forgiving of
+  // slightly malformed model output.
+  let raw = m[0];
+
+  const tryParse = (s: string) => {
+    try {
+      return JSON.parse(s);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  let j = tryParse(raw) as { lines?: Array<{ speaker?: string; text?: string }> } | null;
+  if (!j) {
+    // Repair common issues: remove trailing commas, convert smart quotes to normal
+    // quotes, and add quotes around unquoted object keys.
+    let repaired = raw
+      // remove trailing commas before } or ]
+      .replace(/,\s*(?=[}\]])/g, "")
+      // smart quotes to normal double quotes
+      .replace(/[\u2018\u2019\u201C\u201D]/g, '"')
+      // ensure keys are quoted: { key: -> { "key":
+      // Only adds quotes to unquoted keys (letters, numbers, underscore) followed by a colon
+      .replace(/([\{,\s])([A-Za-z0-9_]+)\s*:/g, '$1"$2":');
+
+    // Try parsing the repaired string
+    j = tryParse(repaired) as { lines?: Array<{ speaker?: string; text?: string }> } | null;
+
+    if (j) {
+      console.warn('[podcast] repaired model JSON output', { original: raw.slice(0, 2000), repaired: repaired.slice(0, 2000) });
+    } else {
+      console.error('[podcast] failed to parse model JSON output', { original: raw.slice(0, 2000) });
+      throw new Error("The script writer didn't return a valid JSON script. Try again or check logs.");
+    }
+  }
+
+  const lines = (j!.lines ?? [])
     .map((l) => ({ speaker: (l.speaker === "B" ? "B" : "A") as "A" | "B", text: String(l.text ?? "").trim() }))
     .filter((l) => l.text)
     .slice(0, 26);

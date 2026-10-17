@@ -13,7 +13,7 @@ export function InvestigationReferences({ caseId, catalog = false, owner }: { ca
   if (!d) return null;
   const companies = catalog ? d.catalog : d.companyMatches;
   return <section className="py-4 space-y-3 border-y border-border">
-    <h2 className="text-sm text-accent flex gap-2 items-center"><Library className="size-4" /> {catalog ? "FBI company reference library" : "Consent-decree & company references"}</h2>
+    <h2 className="text-sm text-accent flex gap-2 items-center"><Library className="size-4" /> {catalog ? "FBI & agency company references" : "Consent-decree & company references"}</h2>
     <p className="text-xs text-muted-foreground">Historical references and records awaiting verification · not confirmed violations</p>
     {companies.length === 0 ? <p className="text-xs text-muted-foreground">{catalog ? "No company references match this search." : "No exact FAA title-owner match in the company reference list. This does not clear the aircraft."}</p> : <div className="grid md:grid-cols-2 gap-2">{companies.map(c => <article key={c.id} className="border border-border rounded-sm p-3 text-xs space-y-1"><h3 className="font-medium">{c.entity_name}</h3><p>{c.agency ?? "Agency not recorded"} · {c.source ?? "Source not recorded"}</p><p className="text-muted-foreground">{catalog ? "Historical company reference" : "Match: exact FAA title-owner name"} · no current mission attribution</p></article>)}</div>}
     {!catalog && <>

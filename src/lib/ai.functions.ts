@@ -155,6 +155,8 @@ export const askInvestigator = createServerFn({ method: "POST" })
     }
 
     const context = await gatherContext();
+    const { referenceContext } = await import("./investigation-references.server");
+    extra += `\n\n${await referenceContext({ caseId: data.caseId, catalog: true })}`;
 
     const { fetchDoctrineContext } = await import("./doctrine.functions");
     const doctrine = await fetchDoctrineContext(data.question, 3);
@@ -193,6 +195,8 @@ export const draftCaseBrief = createServerFn({ method: "POST" })
     );
     if (!caseRows[0]) return { ok: false as const, error: "Case not found" };
     const c = caseRows[0] as { detection_ids?: string[] | null; subject_icao?: string | null };
+    const { referenceContext } = await import("./investigation-references.server");
+    const references = await referenceContext({ caseId: data.caseId });
 
     const dets = c.detection_ids?.length
       ? await neonQuery(
@@ -233,6 +237,7 @@ export const draftCaseBrief = createServerFn({ method: "POST" })
         prompt: `Draft a ${cfg.label}
 
 ## Case Data
+${references}
 ${JSON.stringify(c, null, 2)}
 
 ## Linked Detections (sample, up to 50)

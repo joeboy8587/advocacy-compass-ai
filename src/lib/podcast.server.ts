@@ -37,7 +37,7 @@ Rules:
 - Neutral, population-scale framing. Never say "targeting", "stalking", "conspiracy". Never name private individuals.
 - Never dismiss an aircraft because of who owns it; judge by how it flew.
 - 14 to 22 lines total, each line 1-3 sentences. Open with the date, close with: "All data is from public sources and can be checked by anyone."
-Return ONLY JSON: {"lines":[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]}";
+Return ONLY JSON: {"lines":[{"speaker":"A","text":"..."},{"speaker":"B","text":"..."}]}`;
 
 export async function writeScript(narrativeDate: string, narrativeMd: string): Promise<{ lines: ScriptLine[]; provider: string }> {
   const { generateTextWithFallback } = await import("./ai-fallback.server");

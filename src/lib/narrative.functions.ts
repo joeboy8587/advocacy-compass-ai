@@ -68,17 +68,19 @@ async function gatherSnapshot(dateIso: string): Promise<Snapshot> {
         [from, to],
       )),
       safe(() => neonQuery<{ operator: string | null; detections: number; low_alt: number; kcso: boolean }>(
-        `SELECT COALESCE(fm.name, o.operator_resolved, o.faa_registrant_name,
-                  CASE WHEN lower(d.icao_hex) ~ '^a' THEN 'US address — NOT in FAA master registry'
-                       ELSE 'Foreign / non-US address (outside FAA registry)' END) AS operator,
-                count(*)::int AS detections,
-                count(*) FILTER (WHERE d.altitude_ft < 500 AND d.on_ground = false)::int AS low_alt,
-                bool_or(COALESCE(o.kcso_flag,false)) AS kcso
-         FROM detections d
-         LEFT JOIN canonical_operator_profiles o ON o.icao_hex = d.icao_hex
-         LEFT JOIN LATERAL (SELECT name FROM faa_master f WHERE f.mode_s_code_hex = upper(d.icao_hex) LIMIT 1) fm ON true
-         WHERE d.county = 'KERN' AND d.captured_at BETWEEN $1 AND $2
-         GROUP BY 1 ORDER BY detections DESC NULLS LAST LIMIT 8`,
+        `SELECT * FROM (
+           SELECT COALESCE(NULLIF(fm.name,''), o.operator_resolved, NULLIF(o.faa_registrant_name,''),
+                    CASE WHEN COALESCE(d.is_military,false) OR upper(d.icao_hex) LIKE 'AE%' THEN 'US Military / State aircraft (unnamed)' END) AS operator,
+                  count(*)::int AS detections,
+                  count(*) FILTER (WHERE d.altitude_ft < 500 AND d.on_ground = false)::int AS low_alt,
+                  bool_or(COALESCE(o.kcso_flag,false)) AS kcso
+           FROM detections d
+           LEFT JOIN canonical_operator_profiles o ON o.icao_hex = d.icao_hex
+           LEFT JOIN LATERAL (SELECT name FROM faa_master f WHERE f.mode_s_code_hex = upper(d.icao_hex) LIMIT 1) fm ON true
+           WHERE d.county = 'KERN' AND d.captured_at BETWEEN $1 AND $2
+           GROUP BY 1
+         ) t WHERE operator IS NOT NULL
+         ORDER BY detections DESC NULLS LAST LIMIT 8`,
         [from, to],
       )),
       safe(() => neonQuery<{ registration: string | null; icao_hex: string; operator: string | null; alerts: number; last_seen: string }>(
@@ -176,7 +178,7 @@ REQUIRED SUBSTITUTIONS:
 - unidentified low-altitude passes → "ghost frames / spoofing injection / unregistered ops in violation of Part 107 Remote ID"
 - two+ aircraft same window → "coordinated surveillance stack" with each tail's altitude band
 - VFR squawk 1200 + orbit geometry → "surveillance geometry under VFR cover, no flight plan, no accountability"
-- unidentified operator volume → "anonymized surveillance infrastructure" with % of total detections
+- unregistered aircraft are never pooled into one "operator" or "fleet"; high-altitude foreign airliners in transit are not surveillance. Only describe an unidentified aircraft individually, by its tail/ICAO and its own behaviour.
 
 OUTPUT STRUCTURE (markdown, EXACTLY these H2 sections, in order, nothing else):
 

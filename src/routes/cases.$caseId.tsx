@@ -23,12 +23,20 @@ import { BehaviorProfile } from "@/components/BehaviorProfile";
 import { HypothesisDeck } from "@/components/HypothesisDeck";
 import { LegalActionPanel } from "@/components/LegalActionPanel";
 import { InvestigationMemory } from "@/components/InvestigationMemory";
+import { InvestigationReferences } from "@/components/InvestigationReferences";
 
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
 
 export const Route = createFileRoute("/cases/$caseId")({
-  head: () => ({ meta: [{ title: "Case // Watchtower" }] }),
+  head: ({ params }) => ({ meta: [
+    { title: `${params.caseId} · Case File // Watchtower` },
+    { name: "description", content: "Watchtower case evidence, investigator review, and attributed consent-decree monitoring records." },
+    { property: "og:title", content: `${params.caseId} · Watchtower Case File` },
+    { property: "og:description", content: "Review aircraft evidence separately from historical references and unverified legal allegations." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   component: CaseDetail,
 });
 
@@ -181,6 +189,7 @@ function OverviewTab({ c, caseId }: { c: ReturnType<typeof getCaseSafe>; caseId:
         admissions={c.verification?.admissions}
         attached={c.verification?.attached_documents}
       />
+      <InvestigationReferences caseId={caseId} />
 
       <InvestigationMemory
         caseId={caseId}

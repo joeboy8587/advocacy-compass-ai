@@ -1,5 +1,6 @@
 // Live corpus snapshot Josiah gets on every turn. Server-only.
 import { neonQuery } from "./neon.server";
+import { referenceContext } from "./investigation-references.server";
 
 export async function gatherContext(): Promise<string> {
   const [kpis, topRules, topOwners, topMil, locks] = await Promise.all([
@@ -43,6 +44,7 @@ export async function gatherContext(): Promise<string> {
       ? locks.map((l) => `- ${l.lock_id}: r=${l.r}, p=${l.p}`).join("\n")
       : "- (none in recent window)",
     admissions,
+    await referenceContext({ catalog: true }),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -107,11 +109,12 @@ export async function gatherCaseContext(caseId: string): Promise<string> {
   );
   if (!rows[0]) return "";
   const icao = (rows[0].subject_icao as string | null) ?? null;
-  const [ml, clusters] = await Promise.all([
+  const [ml, clusters, references] = await Promise.all([
     icao ? gatherBehaviorContext(icao) : Promise.resolve(""),
     icao ? gatherClusterContext(icao) : Promise.resolve(""),
+    referenceContext({ caseId }),
   ]);
-  return `## Bound Case ${caseId}\n${JSON.stringify(rows[0], null, 2)}${ml ? `\n\n${ml}` : ""}${clusters ? `\n\n${clusters}` : ""}`;
+  return `## Bound Case ${caseId}\n${JSON.stringify(rows[0], null, 2)}${ml ? `\n\n${ml}` : ""}${clusters ? `\n\n${clusters}` : ""}\n\n${references}`;
 
 }
 

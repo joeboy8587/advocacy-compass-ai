@@ -6,10 +6,18 @@ import { Users, Search, Shield, Heart, Plane, Briefcase } from "lucide-react";
 import { getOperators, lookupRegistry } from "@/lib/watchtower.functions";
 import { OperatorNetworkPanel } from "@/components/OperatorNetworkPanel";
 import { ShellNetworkPanel } from "@/components/ShellNetworkPanel";
+import { InvestigationReferences } from "@/components/InvestigationReferences";
 
 
 export const Route = createFileRoute("/operators")({
-  head: () => ({ meta: [{ title: "Operators // Watchtower" }] }),
+  head: () => ({ meta: [
+    { title: "Operators & FAA References // Watchtower" },
+    { name: "description", content: "FAA title-owner records and attributed historical company references for Watchtower investigations." },
+    { property: "og:title", content: "Watchtower Operator References" },
+    { property: "og:description", content: "Review FAA ownership and historical company sources without inferring current missions." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   component: OperatorsPage,
 });
 
@@ -36,6 +44,7 @@ function OperatorsPage() {
     <div className="p-6 space-y-4">
       <OperatorNetworkPanel search={search} />
       <ShellNetworkPanel />
+      <InvestigationReferences catalog owner={search} />
 
       <header>
         <h1 className="text-2xl neon-text-orange flex items-center gap-2">

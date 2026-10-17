@@ -22,3 +22,7 @@
 
 ## Intelligence Vault
 - All filed research/analysis/screenshots live in Neon `vault_items` (SHA-256 unique) with AI recall cards, a pgvector embedding, and an entity graph (`vault_entities` + `vault_mentions`); logic in `src/lib/vault.server.ts` — why: one indexed memory lets every page and Josiah (`search_knowledge_vault`) show what was already found, preventing repeat work.
+
+## Investigation references
+- New company/decree reads use `investigation-references.server.ts` through the linked Neon connector and `reference-neon.server.ts` — why: one bounded read-only source feeds case UI, operator references, and both Josiah paths without duplicating evidence.
+- Reference rows stay separate from machine leads, violation totals, scores and investigator memory; company matches require exact FAA title-owner names, and decree allegations expose aircraft-mention provenance — why: historical ownership, monitoring activity and unsupported legal claims must not become confirmed findings automatically.

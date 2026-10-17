@@ -12,6 +12,14 @@ export const JOSIAH_TOOLS: ToolSpec[] = [
   {
     type: "function",
     function: {
+      name: "investigation_references",
+      description: "Read historical FBI company references, exact FAA title-owner matches, and aircraft-linked consent-decree monitoring observations and stored allegations. These are not confirmed violations or evidence of current mission/intent. Always use this when asked about FBI companies or consent decrees.",
+      parameters: { type: "object", properties: { case_id: { type: "string" }, icao: { type: "string" }, registration: { type: "string" }, company: { type: "string" } }, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "list_tables",
       description:
         "List the tables and their columns available in the Watchtower Neon database. Use this before writing SQL if you are unsure of a column name.",
@@ -109,6 +117,16 @@ function guardSql(sqlRaw: string): string {
 export async function runJosiahTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   try {
     switch (name) {
+      case "investigation_references": {
+        const { readInvestigationReferences } = await import("./investigation-references.server");
+        return await readInvestigationReferences({
+          caseId: typeof args.case_id === "string" ? args.case_id.slice(0, 100) : undefined,
+          icao: typeof args.icao === "string" ? args.icao.slice(0, 32) : undefined,
+          registrations: typeof args.registration === "string" ? [args.registration.slice(0, 30)] : [],
+          owner: typeof args.company === "string" ? args.company.slice(0, 200) : undefined,
+          catalog: true,
+        });
+      }
       case "list_tables": {
         const filter = typeof args.filter === "string" ? `%${args.filter}%` : "%";
         const rows = await neonQuery<{ table_name: string; columns: string }>(

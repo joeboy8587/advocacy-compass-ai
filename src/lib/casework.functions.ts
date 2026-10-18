@@ -920,7 +920,7 @@ export const autoBuildCase = createServerFn({ method: "POST" })
                SELECT captured_at, latitude::float lat, longitude::float lon
                  FROM detections
                 WHERE icao_hex = $1
-                  AND captured_at > now() - interval '14 days'
+                  AND captured_at > (SELECT COALESCE(max(captured_at), now()) FROM detections WHERE icao_hex = $1) - interval '14 days'
                   AND latitude IS NOT NULL AND longitude IS NOT NULL
                 ORDER BY captured_at DESC
                 LIMIT 25

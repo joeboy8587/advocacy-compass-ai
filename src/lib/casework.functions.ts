@@ -933,7 +933,7 @@ export const autoBuildCase = createServerFn({ method: "POST" })
                                        AND s.captured_at + interval '2 minutes'
                 AND abs(d.latitude::float - s.lat) < 0.1
                 AND abs(d.longitude::float - s.lon) < 0.1`,
-            [icao],
+            [icao.toUpperCase()],
           ),
           [{ n: 0 }],
         )

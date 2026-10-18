@@ -847,14 +847,22 @@ export const autoBuildCase = createServerFn({ method: "POST" })
     const [dets, anoms, vios, convsPrimary] = await Promise.all([
       safe(
         q<{ id: string; captured_at: string; county: string | null; low: boolean }>(
-          `SELECT id::text, captured_at, county,
-                  COALESCE(is_91_227_violator, false) AS low
-             FROM detections
-            WHERE ($1::text IS NOT NULL AND icao_hex = $1)
-               OR ($2::text IS NOT NULL AND registration ILIKE $2)
-            ORDER BY captured_at DESC
-            LIMIT 2000`,
-          [icao, reg],
+          // ICAO is stored uppercase in detections; matching on upper() hits the
+          // index. Registration is only a fallback when the case has no ICAO.
+          icao
+            ? `SELECT id::text, captured_at, county,
+                      COALESCE(is_91_227_violator, false) AS low
+                 FROM detections
+                WHERE icao_hex = upper($1)
+                ORDER BY captured_at DESC
+                LIMIT 2000`
+            : `SELECT id::text, captured_at, county,
+                      COALESCE(is_91_227_violator, false) AS low
+                 FROM detections
+                WHERE registration = upper($1)
+                ORDER BY captured_at DESC
+                LIMIT 2000`,
+          [icao ?? reg],
         ),
       ),
       icao
@@ -912,7 +920,7 @@ export const autoBuildCase = createServerFn({ method: "POST" })
                SELECT captured_at, latitude::float lat, longitude::float lon
                  FROM detections
                 WHERE icao_hex = $1
-                  AND captured_at > now() - interval '14 days'
+                  AND captured_at > (SELECT COALESCE(max(captured_at), now()) FROM detections WHERE icao_hex = $1) - interval '14 days'
                   AND latitude IS NOT NULL AND longitude IS NOT NULL
                 ORDER BY captured_at DESC
                 LIMIT 25
@@ -925,7 +933,7 @@ export const autoBuildCase = createServerFn({ method: "POST" })
                                        AND s.captured_at + interval '2 minutes'
                 AND abs(d.latitude::float - s.lat) < 0.1
                 AND abs(d.longitude::float - s.lon) < 0.1`,
-            [icao],
+            [icao.toUpperCase()],
           ),
           [{ n: 0 }],
         )

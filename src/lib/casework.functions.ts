@@ -847,14 +847,22 @@ export const autoBuildCase = createServerFn({ method: "POST" })
     const [dets, anoms, vios, convsPrimary] = await Promise.all([
       safe(
         q<{ id: string; captured_at: string; county: string | null; low: boolean }>(
-          `SELECT id::text, captured_at, county,
-                  COALESCE(is_91_227_violator, false) AS low
-             FROM detections
-            WHERE ($1::text IS NOT NULL AND icao_hex = $1)
-               OR ($2::text IS NOT NULL AND registration ILIKE $2)
-            ORDER BY captured_at DESC
-            LIMIT 2000`,
-          [icao, reg],
+          // ICAO is stored uppercase in detections; matching on upper() hits the
+          // index. Registration is only a fallback when the case has no ICAO.
+          icao
+            ? `SELECT id::text, captured_at, county,
+                      COALESCE(is_91_227_violator, false) AS low
+                 FROM detections
+                WHERE icao_hex = upper($1)
+                ORDER BY captured_at DESC
+                LIMIT 2000`
+            : `SELECT id::text, captured_at, county,
+                      COALESCE(is_91_227_violator, false) AS low
+                 FROM detections
+                WHERE registration = upper($1)
+                ORDER BY captured_at DESC
+                LIMIT 2000`,
+          [icao ?? reg],
         ),
       ),
       icao

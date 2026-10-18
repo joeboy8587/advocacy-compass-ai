@@ -111,12 +111,21 @@ async function openaiRespond(system: string, user: string): Promise<string> {
   return j.choices[0]?.message?.content ?? "";
 }
 
+const EMBED_DIMS = 768; // vault_items.embedding column size
+
+/** Normalise any provider's vector to the column size (truncate or zero-pad). */
+function toColumnDims(vec: number[]): number[] {
+  if (vec.length === EMBED_DIMS) return vec;
+  if (vec.length > EMBED_DIMS) return vec.slice(0, EMBED_DIMS);
+  return [...vec, ...new Array(EMBED_DIMS - vec.length).fill(0)];
+}
+
 export async function embed(text: string): Promise<number[]> {
   try {
-    return await primaryEmbed(text);
+    return toColumnDims(await primaryEmbed(text));
   } catch (e) {
     console.warn("[vault] primary embed failed, using backup:", (e as Error).message);
-    return openaiEmbed(text);
+    return toColumnDims(await openaiEmbed(text));
   }
 }
 

@@ -20,6 +20,7 @@ import { Route as IntelRouteImport } from './routes/intel'
 import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as NarrativeRouteImport } from './routes/narrative'
+import { Route as NetworkRouteImport } from './routes/network'
 import { Route as OperatorsRouteImport } from './routes/operators'
 import { Route as PatternsRouteImport } from './routes/patterns'
 import { Route as RegulationsRouteImport } from './routes/regulations'
@@ -87,6 +88,11 @@ const MapRoute = MapRouteImport.update({
 const NarrativeRoute = NarrativeRouteImport.update({
   id: '/narrative',
   path: '/narrative',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NetworkRoute = NetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OperatorsRoute = OperatorsRouteImport.update({
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/leads': typeof LeadsRoute
   '/map': typeof MapRoute
   '/narrative': typeof NarrativeRoute
+  '/network': typeof NetworkRoute
   '/operators': typeof OperatorsRoute
   '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/leads': typeof LeadsRoute
   '/map': typeof MapRoute
   '/narrative': typeof NarrativeRoute
+  '/network': typeof NetworkRoute
   '/operators': typeof OperatorsRoute
   '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
@@ -220,6 +228,7 @@ export interface FileRoutesById {
   '/leads': typeof LeadsRoute
   '/map': typeof MapRoute
   '/narrative': typeof NarrativeRoute
+  '/network': typeof NetworkRoute
   '/operators': typeof OperatorsRoute
   '/patterns': typeof PatternsRoute
   '/regulations': typeof RegulationsRoute
@@ -248,6 +257,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/map'
     | '/narrative'
+    | '/network'
     | '/operators'
     | '/patterns'
     | '/regulations'
@@ -274,6 +284,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/map'
     | '/narrative'
+    | '/network'
     | '/operators'
     | '/patterns'
     | '/regulations'
@@ -300,6 +311,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/map'
     | '/narrative'
+    | '/network'
     | '/operators'
     | '/patterns'
     | '/regulations'
@@ -327,6 +339,7 @@ export interface RootRouteChildren {
   LeadsRoute: typeof LeadsRoute
   MapRoute: typeof MapRoute
   NarrativeRoute: typeof NarrativeRoute
+  NetworkRoute: typeof NetworkRoute
   OperatorsRoute: typeof OperatorsRoute
   PatternsRoute: typeof PatternsRoute
   RegulationsRoute: typeof RegulationsRoute
@@ -417,6 +430,13 @@ declare module '@tanstack/react-router' {
       path: '/narrative'
       fullPath: '/narrative'
       preLoaderRoute: typeof NarrativeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/network': {
+      id: '/network'
+      path: '/network'
+      fullPath: '/network'
+      preLoaderRoute: typeof NetworkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/operators': {
@@ -537,6 +557,7 @@ const rootRouteChildren: RootRouteChildren = {
   LeadsRoute: LeadsRoute,
   MapRoute: MapRoute,
   NarrativeRoute: NarrativeRoute,
+  NetworkRoute: NetworkRoute,
   OperatorsRoute: OperatorsRoute,
   PatternsRoute: PatternsRoute,
   RegulationsRoute: RegulationsRoute,

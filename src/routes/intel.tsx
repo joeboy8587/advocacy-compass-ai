@@ -1,11 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Send, Loader2, FileText, Scale, Flame } from "lucide-react";
 import { askInvestigator, draftCaseBrief } from "@/lib/ai.functions";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/intel")({
-  head: () => ({ meta: [{ title: "Josiah // Watchtower Investigator" }] }),
+  head: () => ({ meta: [{ title: "Josiah // Watchtower Investigator" }, { name: "description", content: "Watchtower investigator chat and evidence-based case briefs." }, { property: "og:title", content: "Josiah // Watchtower Investigator" }, { property: "og:description", content: "Review Watchtower evidence and draft investigation briefs with Josiah." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
   component: Intel,
 });
 
@@ -84,6 +85,7 @@ function Intel() {
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-4">
       <header className="space-y-1">
+        <Button variant="outline" size="sm" asChild><Link to="/network">Open Network Graph</Link></Button>
         <h1 className="text-2xl neon-text-orange flex items-center gap-3">
           <span className="font-mono">◢◤</span> JOSIAH
           <span className="text-xs text-muted-foreground tracking-widest uppercase">

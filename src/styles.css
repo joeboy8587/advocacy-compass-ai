@@ -1,8 +1,27 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@import "@xyflow/react/dist/style.css";
 
 @custom-variant dark (&:is(.dark *));
+
+.network-canvas {
+  --xy-background-color: var(--background);
+  --xy-node-background-color: var(--card);
+  --xy-node-color: var(--foreground);
+  --xy-node-border: 1px solid var(--border);
+  --xy-edge-stroke: var(--muted-foreground);
+  --xy-edge-stroke-selected: var(--primary);
+  --xy-edge-label-color: var(--foreground);
+  --xy-edge-label-background-color: var(--background);
+  --xy-background-pattern-dots-color: var(--border);
+}
+.network-canvas .network-node { width: 220px; min-height: 66px; border-radius: var(--radius); }
+.network-canvas .network-node-aircraft { border-color: var(--primary); }
+.network-canvas .network-node-company { border-color: var(--accent); }
+.network-canvas .network-node:not(.network-node-aircraft):not(.network-node-company) { border-color: var(--neon-cyan); }
+.network-canvas .network-node.selected { box-shadow: 0 0 0 2px var(--primary); }
+.network-canvas .react-flow__edge-text { font-size: 10px; }
 
 /* ============================================================
    WATCHTOWER COMMAND — Cyberpunk Design System

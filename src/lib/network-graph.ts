@@ -1,5 +1,5 @@
-export type NetworkNode = { id: string; label: string; kind: string; metadata: Record<string, unknown>; recordedAt: string | null };
-export type NetworkEdge = { id: string; source: string; target: string; relation: string; weight: number | null; metadata: Record<string, unknown>; recordedAt: string | null };
+export type NetworkNode = { id: string; label: string; kind: string; metadata: Record<string, string>; recordedAt: string | null };
+export type NetworkEdge = { id: string; source: string; target: string; relation: string; weight: number | null; metadata: Record<string, string>; recordedAt: string | null };
 export type StoredNetwork = { nodes: NetworkNode[]; edges: NetworkEdge[]; truncated: boolean };
 
 export function filterNetwork(graph: StoredNetwork, search: string, relation: string) {

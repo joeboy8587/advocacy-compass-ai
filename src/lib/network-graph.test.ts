@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, it } from 'node:test';
+import { strict as assert } from 'node:assert';
 import { filterNetwork, type StoredNetwork } from './network-graph';
 
 const graph: StoredNetwork = {
@@ -9,10 +10,10 @@ const graph: StoredNetwork = {
 describe('stored network filtering', () => {
   it('includes the recorded neighbor when searching an aircraft case-insensitively', () => {
     const result = filterNetwork(graph, 'n786fa', '');
-    expect(result.nodes.map(n => n.id)).toEqual(['N786FA', 'ALF IX LLC']);
-    expect(result.edges).toHaveLength(1);
+    assert.deepEqual(result.nodes.map(n => n.id), ['N786FA', 'ALF IX LLC']);
+    assert.equal(result.edges.length, 1);
   });
   it('does not invent relationships for an unmatched filter', () => {
-    expect(filterNetwork(graph, '', 'CO_OWNED_BY')).toEqual({ nodes: [], edges: [] });
+    assert.deepEqual(filterNetwork(graph, '', 'CO_OWNED_BY'), { nodes: [], edges: [] });
   });
 });

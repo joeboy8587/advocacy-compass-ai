@@ -17,7 +17,7 @@ export const askInvestigator = createServerFn({ method: "POST" })
 
     const mode =
       data.mode && data.mode !== "AUTO" ? data.mode : selectMode(data.question);
-    const system = systemFor(mode);
+    const system = systemFor(mode, true);
 
     let extra = "";
     if (data.caseId) {

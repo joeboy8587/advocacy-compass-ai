@@ -23,6 +23,7 @@
 ## Intelligence Vault
 
 - Both Josiah chat entry points use shared question-specific read-only connector retrieval before generation; visible chat passes bounded conversation history — why: every provider sees relevant cases, filed research and detections instead of only a top-owner snapshot.
+- Shared Josiah prompts separate internal co-investigator dialogue from external brief drafting and describe only implemented tools; detection retrieval supplies Pacific timestamps — why: chat tone must not override evidence integrity or depend on model timezone arithmetic.
 - Josiah's dynamic SQL executes in a gateway read-only transaction and detections use a parameterized dedicated tool — why: investigative access must not mutate records or depend on a particular operator.
 - All filed research/analysis/screenshots live in Neon `vault_items` (SHA-256 unique) with AI recall cards, a pgvector embedding, and an entity graph (`vault_entities` + `vault_mentions`); logic in `src/lib/vault.server.ts` — why: one indexed memory lets every page and Josiah (`search_knowledge_vault`) show what was already found, preventing repeat work.
 

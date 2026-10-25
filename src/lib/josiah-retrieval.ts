@@ -43,5 +43,5 @@ export function detectionStatement(input: DetectionSearch, resolvedHexes: string
   const limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 30) || 30));
   return { query: `SELECT id, to_json(captured_at) AS captured_at, icao_hex, registration, callsign, altitude_ft, speed_kts, on_ground, county, latitude, longitude, source_type
     FROM public.detections ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-    ORDER BY captured_at DESC, id DESC LIMIT ${bind(limit)}`, params };
+    ORDER BY public.detections.captured_at DESC, id DESC LIMIT ${bind(limit)}`, params };
 }

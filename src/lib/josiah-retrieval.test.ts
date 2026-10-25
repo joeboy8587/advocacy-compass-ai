@@ -13,6 +13,7 @@ test("detections resolve both ICAO cases and bind tail numbers without owner res
   assert.deepEqual(statement.params, ["N833SB", ["AB6511", "ab6511"], 20]);
   assert.equal(statement.query.includes("subject_owner"), false);
   assert.equal(statement.query.includes("FROM public.detections"), true);
+  assert.equal(statement.query.includes("ORDER BY public.detections.captured_at DESC"), true);
 });
 test("detection filters are bounded and dates must be valid", () => {
   assert.deepEqual(detectionStatement({ county: "San Bernardino", limit: 900 }).params, ["SAN BERNARDINO", 100]);

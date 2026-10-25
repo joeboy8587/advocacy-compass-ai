@@ -12,6 +12,14 @@ export const JOSIAH_TOOLS: ToolSpec[] = [
   {
     type: "function",
     function: {
+      name: "search_detections",
+      description: "Search live Neon detections for ANY aircraft, not just KCSO or 9K AIR. Resolves FAA tail numbers to ICAO addresses. Returns recent timestamped sightings with altitude, speed, ground status, county, position and source. Optional UTC since/before dates and county. This is a bounded sample, not total counts or proof of a violation.",
+      parameters: { type: "object", properties: { identifier: { type: "string" }, county: { type: "string" }, since: { type: "string" }, before: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 100 } }, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "investigation_references",
       description: "Read historical FBI company references, exact FAA title-owner matches, and aircraft-linked consent-decree monitoring observations and stored allegations. These are not confirmed violations or evidence of current mission/intent. Always use this when asked about FBI companies or consent decrees.",
       parameters: { type: "object", properties: { case_id: { type: "string" }, icao: { type: "string" }, registration: { type: "string" }, company: { type: "string" } }, required: [] },
@@ -117,6 +125,16 @@ function guardSql(sqlRaw: string): string {
 export async function runJosiahTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   try {
     switch (name) {
+      case "search_detections": {
+        const { searchDetections } = await import("./josiah-retrieval.server");
+        return searchDetections({
+          identifier: typeof args.identifier === "string" ? args.identifier.slice(0, 30) : undefined,
+          county: typeof args.county === "string" ? args.county.slice(0, 100) : undefined,
+          since: typeof args.since === "string" ? args.since : undefined,
+          before: typeof args.before === "string" ? args.before : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+        });
+      }
       case "investigation_references": {
         const { readInvestigationReferences } = await import("./investigation-references.server");
         return await readInvestigationReferences({
@@ -140,7 +158,9 @@ export async function runJosiahTool(name: string, args: Record<string, unknown>)
       }
       case "run_sql": {
         const sql = guardSql(String(args.sql ?? ""));
-        const rows = await neonQuery<Record<string, unknown>>(sql);
+        const { neonQuery: read } = await import("./reference-neon.server");
+        const { results } = await read<{ results: Array<{ rows: Record<string, unknown>[] }> }>([{ query: sql }], [], { "Neon-Batch-Read-Only": "true" });
+        const rows = results[0]?.rows ?? [];
         return { row_count: rows.length, rows: rows.slice(0, 100) };
       }
       case "search_cases": {

@@ -6,5 +6,5 @@
 - [x] Verify new reference displays and matching with real records.
 - [ ] Local profiler baseline rebuild, retraining and ground-elevation backfill — requires the user's PC.
 - [x] Build and verify an interactive network graph from existing Neon records.
-- [ ] Broaden both Josiah chats beyond top operators and verify answers for other aircraft.
-- [ ] Give both Josiah chats read-only access to Neon detections and verify real sightings.
+- [x] Broaden both Josiah chats beyond top operators; verified N833SB and conversation follow-up in the visible chat.
+- [x] Give both Josiah chats read-only access to Neon detections; verified five N833SB sightings against source records.

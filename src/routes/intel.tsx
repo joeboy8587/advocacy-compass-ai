@@ -6,7 +6,7 @@ import { askInvestigator, draftCaseBrief } from "@/lib/ai.functions";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/intel")({
-  head: () => ({ meta: [{ title: "Josiah // Watchtower Investigator" }, { name: "description", content: "Watchtower investigator chat and evidence-based case briefs." }, { property: "og:title", content: "Josiah // Watchtower Investigator" }, { property: "og:description", content: "Review Watchtower evidence and draft investigation briefs with Josiah." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
+  head: () => ({ meta: [{ title: "Josiah // Watchtower Investigator" }, { name: "description", content: "Watchtower investigator chat and evidence-based case briefs." }, { property: "og:title", content: "Josiah // Watchtower Investigator" }] }),
   component: Intel,
 });
 
@@ -14,10 +14,10 @@ type Mode = "AUTO" | "LEGAL" | "SNARK";
 type Msg = { role: "user" | "assistant"; content: string; mode?: string };
 
 const QUICK_PROMPTS_SNARK = [
-  "Roast the top 3 shell-company operators in the corpus.",
-  "Tear apart KCSO's last 7 days of low-altitude activity.",
-  "Which operator has the most §91.119 violations and why is the FAA still silent?",
-  "Tactical brief on convergence locks recorded this week.",
+  "Internal war-room: roast the top 3 shell-company operators in the corpus.",
+  "Challenge the last 7 days of low-altitude activity and tell me what still doesn't add up.",
+  "Which operator has the most §91.119 patterning, and what evidence would actually prove it's not a false lead?",
+  "Tactical internal brief on convergence locks recorded this week.",
 ];
 
 const QUICK_PROMPTS_LEGAL = [
@@ -94,7 +94,7 @@ function Intel() {
         </h1>
         <p className="text-xs text-muted-foreground">
           No biometrics. No feelings. No hedging. ADS-B telemetry, FAA registry, convergence locks, 14 CFR.
-          Legal mode for the courtroom. Snark mode for the war room.
+          Legal mode for the courtroom. Internal war-room snark for the co-investigator desk.
         </p>
       </header>
 
@@ -121,8 +121,7 @@ function Intel() {
           </button>
         ))}
         <span className="ml-auto text-[10px] text-muted-foreground">
-          Tip: prefix any prompt with <code className="text-accent">[LEGAL]</code> or{" "}
-          <code className="text-destructive">[SNARK]</code> to force a mode.
+          Tip: prefix any prompt with <code className="text-accent">[LEGAL]</code> or <code className="text-destructive">[SNARK]</code> to force a mode. SNARK is internal-only war-room analysis, not public or legal output.
         </span>
       </section>
 
@@ -166,7 +165,7 @@ function Intel() {
                 {mode === "LEGAL"
                   ? "Legal mode active — citations, CFR, FOIA taskings"
                   : mode === "SNARK"
-                    ? "Snark mode active — headline, roast, receipts, checkmate, tasking"
+                    ? "Internal war-room mode active — co-investigator desk, receipts, contradictions, next moves"
                     : "Auto mode — Josiah picks based on your prompt"}
               </div>
               <div className="flex flex-col gap-2 max-w-xl mx-auto">
@@ -226,7 +225,7 @@ function Intel() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask Josiah — try [SNARK] or [LEGAL] to force a mode…"
+            placeholder="Ask Josiah — try [SNARK] for internal war-room mode or [LEGAL] for formal brief…"
             className="flex-1 bg-input/50 border border-border rounded-sm px-3 py-2 text-sm focus:border-accent outline-none"
           />
           <button
@@ -241,7 +240,7 @@ function Intel() {
 
       <p className="text-[10px] text-muted-foreground text-center">
         Protocol WTPR-NB-INV-002 · No biometrics · No hedging · Convergence locks = ground truth ·
-        All data from public sources (ADS-B, FAA registry, public filings, 14 CFR).
+        All data from public sources (ADS-B, FAA registry, public filings, 14 CFR). Internal SNARK is not for legal or public use.
       </p>
     </div>
   );

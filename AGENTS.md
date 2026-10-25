@@ -21,6 +21,9 @@
 - Frame-level check (`framesFor`, deck kind `frames`) re-verifies CRC-24, embedded address, and emergency status from `raw_messages` in JS — why: those are our own antenna's full frames, the only tamper-proof first-hand evidence we hold.
 
 ## Intelligence Vault
+
+- Both Josiah chat entry points use shared question-specific read-only connector retrieval before generation; visible chat passes bounded conversation history — why: every provider sees relevant cases, filed research and detections instead of only a top-owner snapshot.
+- Josiah's dynamic SQL executes in a gateway read-only transaction and detections use a parameterized dedicated tool — why: investigative access must not mutate records or depend on a particular operator.
 - All filed research/analysis/screenshots live in Neon `vault_items` (SHA-256 unique) with AI recall cards, a pgvector embedding, and an entity graph (`vault_entities` + `vault_mentions`); logic in `src/lib/vault.server.ts` — why: one indexed memory lets every page and Josiah (`search_knowledge_vault`) show what was already found, preventing repeat work.
 
 ## Investigation references

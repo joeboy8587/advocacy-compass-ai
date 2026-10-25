@@ -43,8 +43,8 @@ function Intel() {
   const [mode, setMode] = useState<Mode>("AUTO");
 
   const ask = useMutation({
-    mutationFn: (q: string) =>
-      askInvestigator({ data: { question: q, caseId: caseId || undefined, mode } }),
+    mutationFn: ({ question, history }: { question: string; history: Msg[] }) =>
+      askInvestigator({ data: { question, history, caseId: caseId || undefined, mode } }),
     onSuccess: (r) => {
       setMessages((m) => [
         ...m,
@@ -74,10 +74,10 @@ function Intel() {
   });
 
   const send = (q: string) => {
-    if (!q.trim()) return;
+    if (!q.trim() || ask.isPending) return;
     setMessages((m) => [...m, { role: "user", content: q }]);
     setInput("");
-    ask.mutate(q);
+    ask.mutate({ question: q, history: messages.slice(-12) });
   };
 
   const prompts = mode === "LEGAL" ? QUICK_PROMPTS_LEGAL : QUICK_PROMPTS_SNARK;

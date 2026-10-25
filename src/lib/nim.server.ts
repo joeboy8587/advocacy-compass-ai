@@ -86,7 +86,7 @@ export async function nimInvestigate(opts: {
       return { text: (msg.content ?? "").trim(), model, toolCalls };
     }
     convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: calls });
-    for (const call of calls.slice(0, 4)) {
+    for (const call of calls) {
       toolCalls++;
       let args: Record<string, unknown> = {};
       try {

@@ -188,10 +188,14 @@ export const sendJosiahMessage = createServerFn({ method: "POST" })
     ]);
     history.reverse();
 
-    const { gatherContext, gatherCaseContext, gatherEvidenceContext, gatherLegalExposure } =
+    const { gatherCaseContext, gatherEvidenceContext, gatherLegalExposure } =
       await import("./josiah-context.server");
+    const { gatherQuestionContext } = await import("./josiah-retrieval.server");
+    const { chatHistory } = await import("./josiah-retrieval");
+    const { fetchInvestigatorMemory } = await import("./intelligence.functions");
+    const verdicts = await fetchInvestigatorMemory().catch(() => "");
     const [context, caseCtx, evidenceCtx, legalCtx] = await Promise.all([
-      gatherContext(),
+      gatherQuestionContext(data.question, chatHistory(history.slice(0, -1)), thread.case_id),
       thread.case_id ? gatherCaseContext(thread.case_id) : Promise.resolve(""),
       gatherEvidenceContext(data.question).catch(() => ""),
       gatherLegalExposure().catch(() => ""),
@@ -225,6 +229,7 @@ export const sendJosiahMessage = createServerFn({ method: "POST" })
 
 # PERSISTENT MEMORY (established facts — already known, do not re-derive)
 ${memoryBlock}
+${verdicts ? `\n# INVESTIGATOR VERDICTS (binding; override other memory)\n${verdicts}` : ""}
 
 # LIVE CORPUS CONTEXT
 ${context}${caseCtx ? `\n\n${caseCtx}` : ""}${osint}${doctrine ? `\n\n# Doctrine Library\n${doctrine}` : ""}${evidenceCtx ? `\n\n# Evidence Corpus\n${evidenceCtx}` : ""}${legalCtx ? `\n\n# Legal Exposure\n${legalCtx}` : ""}`;

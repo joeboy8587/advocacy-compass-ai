@@ -7,3 +7,4 @@
 - [ ] Local profiler baseline rebuild, retraining and ground-elevation backfill — requires the user's PC.
 - [x] Build and verify an interactive network graph from existing Neon records.
 - [ ] Broaden both Josiah chats beyond top operators and verify answers for other aircraft.
+- [ ] Give both Josiah chats read-only access to Neon detections and verify real sightings.

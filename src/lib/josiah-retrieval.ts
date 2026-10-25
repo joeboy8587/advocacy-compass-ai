@@ -22,6 +22,11 @@ export function aircraftIdentifiers(question: string, history: ChatTurn[] = []):
 
 export type DetectionSearch = { identifier?: string; county?: string; since?: string; before?: string; limit?: number };
 
+export function pacificTimestamp(value: unknown): string | null {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return null;
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short" }).format(new Date(value));
+}
+
 export function detectionStatement(input: DetectionSearch, resolvedHexes: string[] = []) {
   const params: unknown[] = [];
   const where: string[] = [];

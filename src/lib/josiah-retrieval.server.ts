@@ -1,5 +1,5 @@
 import { neonQuery, neonUserError } from "./reference-neon.server";
-import { aircraftIdentifiers, detectionStatement, type ChatTurn, type DetectionSearch } from "./josiah-retrieval";
+import { aircraftIdentifiers, detectionStatement, pacificTimestamp, type ChatTurn, type DetectionSearch } from "./josiah-retrieval";
 
 type Result = { rows: Record<string, unknown>[] };
 const READ_ONLY = { "Neon-Batch-Read-Only": "true" };
@@ -15,7 +15,7 @@ export async function searchDetections(input: DetectionSearch) {
     const hexes = registry.rows.flatMap(r => typeof r.mode_s_code_hex === "string" ? [r.mode_s_code_hex] : []);
     const statement = detectionStatement(input, hexes);
     const { results } = await neonQuery<{ results: Result[] }>([statement], [], READ_ONLY);
-    const rows = results[0]?.rows ?? [];
+    const rows = (results[0]?.rows ?? []).map(row => ({ ...row, captured_at_pacific: pacificTimestamp(row.captured_at) }));
     return { source: "public.detections", registry: registry.rows, returned: rows.length, sampleOnly: true,
       note: "Latest matching sightings, not total events. Reported altitude is not verified height above ground. Ground rows are not airborne violations. No results means no match for these filters, not that the aircraft is cleared.", rows };
   } catch (error) {

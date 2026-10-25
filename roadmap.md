@@ -8,4 +8,4 @@
 - [x] Build and verify an interactive network graph from existing Neon records.
 - [x] Broaden both Josiah chats beyond top operators; verified N833SB and conversation follow-up in the visible chat.
 - [x] Give both Josiah chats read-only access to Neon detections; verified five N833SB sightings against source records.
-- [ ] Adapt the uploaded co-investigator prompt to actual Josiah tools and verify a live briefing.
+- [x] Adapt uploaded co-investigator prompt to actual tools; live briefing format verified and Pacific conversion tests passed. Model factual/citation adherence remains imperfect, so answers still require source review.

@@ -117,7 +117,7 @@ function LeadsPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm neon-text-orange">{l.registration ?? l.icao_hex}</span>
-                <span className="text-[10px] font-mono text-muted-foreground">{l.icao_hex}</span>
+                {l.registration && <span className="text-[10px] font-mono text-muted-foreground">{l.icao_hex}</span>}
                 <span className="text-[10px] uppercase tracking-widest border border-border px-2 py-0.5">{STATUS_LABEL[l.match_status] ?? l.match_status}</span>
                 {l.ghost && <span className="text-[10px] uppercase tracking-widest border border-border px-2 py-0.5 text-muted-foreground">ghost / TIS-B</span>}
                 {l.saturated && <span className="text-[10px] uppercase tracking-widest border border-destructive/60 text-destructive px-2 py-0.5">score maxed</span>}

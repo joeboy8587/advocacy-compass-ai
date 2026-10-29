@@ -23,6 +23,13 @@ export const Route = createFileRoute("/leads")({
   ),
 });
 
+const STATUS_LABEL: Record<string, string> = {
+  missed: "Model only",
+  new_signal: "New signal",
+  agree: "Both agree",
+  quiet: "Quiet",
+};
+
 const FILTERS = [
   { key: "missed,new_signal", label: "Unworked leads" },
   { key: "missed", label: "Rules missed" },
@@ -63,11 +70,17 @@ function LeadsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {counts.map((c) => (
           <div key={c.match_status} className="panel p-3">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{c.match_status.replace("_", " ")}</div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{STATUS_LABEL[c.match_status] ?? c.match_status.replace(/_/g, " ")}</div>
             <div className="text-xl neon-text-orange">{c.open.toLocaleString()}</div>
             <div className="text-[10px] text-muted-foreground">open of {c.n.toLocaleString()}</div>
           </div>
         ))}
+      </div>
+
+      <div className="panel p-3 text-xs text-muted-foreground">
+        Scores are shown to one decimal — finer differences aren't real. Many aircraft sit at the model's 100 ceiling, where it
+        stops telling them apart; those are marked <span className="text-destructive">score maxed</span>, and "Both agree" on a maxed
+        score is not strong evidence. Rank maxed aircraft by behaviour on the Clusters page.
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -105,19 +118,23 @@ function LeadsPage() {
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm neon-text-orange">{l.registration ?? l.icao_hex}</span>
                 <span className="text-[10px] font-mono text-muted-foreground">{l.icao_hex}</span>
-                <span className="text-[10px] uppercase tracking-widest border border-border px-2 py-0.5">{l.match_status.replace("_", " ")}</span>
+                <span className="text-[10px] uppercase tracking-widest border border-border px-2 py-0.5">{STATUS_LABEL[l.match_status] ?? l.match_status}</span>
+                {l.ghost && <span className="text-[10px] uppercase tracking-widest border border-border px-2 py-0.5 text-muted-foreground">ghost / TIS-B</span>}
+                {l.saturated && <span className="text-[10px] uppercase tracking-widest border border-destructive/60 text-destructive px-2 py-0.5">score maxed</span>}
+                {l.disagreement && <span className="text-[10px] uppercase tracking-widest border border-destructive/60 text-destructive px-2 py-0.5">rules disagree</span>}
                 {l.reviewed && <span className="text-[10px] uppercase tracking-widest text-muted-foreground">worked</span>}
               </div>
               <div className="text-xs text-muted-foreground mt-1">{l.owner ?? "Owner unknown"}</div>
               <p className="text-sm mt-1">{l.reason}</p>
               <div className="text-[11px] text-muted-foreground mt-1">
                 {l.detections ? `${l.detections.toLocaleString()} detections on record · ` : ""}
+                {l.ghost_twin ? `merged ghost twin (${(l.twin_detections ?? 0).toLocaleString()} ghost detections) · ` : ""}
                 {l.evaluated_at ? `evaluated ${new Date(l.evaluated_at).toLocaleDateString()}` : ""}
                 {l.notes ? ` · note: ${l.notes}` : ""}
               </div>
             </div>
             <div className="shrink-0 flex md:flex-col gap-2">
-              <div className="text-2xl font-mono neon-text-green text-right">{l.profile_score ?? "—"}</div>
+              <div className="text-2xl font-mono neon-text-green text-right">{l.profile_score == null ? "—" : l.profile_score.toFixed(1)}</div>
               {l.case_id ? (
                 <Link
                   to="/cases/$caseId"

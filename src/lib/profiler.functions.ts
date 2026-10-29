@@ -1,3 +1,4 @@
+import { roundScore, leadFlags, cleanRegistration, mergeGhostTwins } from "./ml-leads";
 import { createServerFn } from "@tanstack/react-start";
 
 async function q<T = unknown>(text: string, params: unknown[] = []): Promise<T[]> {
@@ -250,14 +251,22 @@ export type MlLead = {
   detections: number | null;
   case_id: string | null;
   reason: string;
+  saturated: boolean;
+  disagreement: boolean;
+  ghost: boolean;
+  ghost_twin: boolean;
+  twin_detections: number | null;
 };
 
-function leadReason(status: string, score: number | null, existing: number | null) {
-  const s = score == null ? "unscored" : Math.round(score);
-  if (status === "missed") return `The rule engine never flagged this aircraft, but the behaviour model scores it ${s}/100. This is an unworked lead.`;
-  if (status === "new_signal") return `New behavioural signal at ${s}/100 that no existing rule covers (best rule score ${existing == null ? "none" : Math.round(existing)}).`;
-  if (status === "agree") return `Both the rules and the behaviour model flag this aircraft (${s}/100) — strongest confidence.`;
-  return `Quiet: nothing unusual (${s}/100).`;
+function leadReason(status: string, score: number | null, existing: number | null, saturated: boolean) {
+  const s = score == null ? "unscored" : saturated ? "at its 100 ceiling" : `${score}/100`;
+  const rule = existing == null ? "none" : String(Math.round(existing));
+  if (status === "missed") return `The rule engine never flagged this aircraft; the behaviour model scores it ${s}. Treat as a question to check, not a finding.`;
+  if (status === "new_signal") return `Model scores it ${s} but the best rule score is ${rule}. The two systems disagree — they are measuring different things, so this needs a human look before it counts.`;
+  if (status === "agree") return saturated
+    ? `Rules and model both flag this aircraft, but the model is at its ceiling — agreement on a maxed-out score is weak evidence. Judge on behaviour.`
+    : `Rules and model both flag this aircraft (model ${s}, best rule ${rule}).`;
+  return `Quiet: nothing unusual (${s}).`;
 }
 
 export const getMlLeadQueue = createServerFn({ method: "GET" })
@@ -287,7 +296,7 @@ export const getMlLeadQueue = createServerFn({ method: "GET" })
          LEFT JOIN LATERAL (SELECT * FROM canonical_operator_profiles t WHERE t.icao_hex = upper(e.icao_hex) LIMIT 1) cop ON true
          LEFT JOIN LATERAL (SELECT * FROM aircraft_profiles t WHERE t.icao_hex = upper(e.icao_hex) ORDER BY t.total_detections DESC NULLS LAST LIMIT 1) ap ON true
          LEFT JOIN LATERAL (SELECT * FROM faa_master t WHERE t.mode_s_code_hex = upper(e.icao_hex) LIMIT 1) fm ON true
-        ORDER BY e.profile_score DESC NULLS LAST`,
+        ORDER BY e.profile_score DESC NULLS LAST, ap.total_detections DESC NULLS LAST`,
       [statuses, data.includeReviewed, data.limit],
     );
     const counts = await q<{ match_status: string; n: number; open: number }>(
@@ -295,8 +304,21 @@ export const getMlLeadQueue = createServerFn({ method: "GET" })
               count(*) FILTER (WHERE COALESCE(reviewed,false)=false)::int AS open
          FROM profiler_shadow_eval GROUP BY match_status`,
     );
+    const merged = mergeGhostTwins(rows);
     return {
-      leads: rows.map((r) => ({ ...r, reason: leadReason(r.match_status, r.profile_score, r.existing_max_score) })),
+      leads: merged.map((r) => {
+        const score = roundScore(r.profile_score);
+        const rule = roundScore(r.existing_max_score);
+        const f = leadFlags(score, rule, r.icao_hex);
+        return {
+          ...r,
+          profile_score: score,
+          existing_max_score: rule,
+          registration: cleanRegistration(r.registration, r.icao_hex),
+          ...f,
+          reason: leadReason(r.match_status, score, rule, f.saturated),
+        };
+      }),
       counts,
     };
   });

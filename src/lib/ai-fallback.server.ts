@@ -21,7 +21,7 @@ function openaiEquivalent(model: string): string {
   return "gpt-4o-mini";
 }
 
-export type GenResult = { text: string; provider: "nvidia" | "lovable" | "openai"; model: string };
+export type GenResult = { text: string; provider: "nvidia" | "ollama" | "lovable" | "openai"; model: string };
 
 /** Generate text with automatic Lovable→OpenAI fallback. */
 export async function generateTextWithFallback(opts: {
@@ -57,6 +57,22 @@ export async function generateTextWithFallback(opts: {
       throw new Error("NVIDIA NIM returned empty text");
     } catch (e) {
       console.warn("[AI] NVIDIA NIM failed, falling back:", (e as Error).message?.slice(0, 200));
+      if (!lovableKey && !openaiKey && !process.env.OLLAMA_API_KEY) throw e;
+    }
+  }
+
+  // Ollama Cloud next — independent of Lovable/OpenAI credits.
+  if (process.env.OLLAMA_API_KEY) {
+    try {
+      const { ollamaChat } = await import("./ollama.server");
+      const messages: Msg[] = [];
+      if (opts.system) messages.push({ role: "system", content: opts.system });
+      if (opts.messages) messages.push(...opts.messages.filter((m) => m.role !== "system" || !opts.system));
+      if (opts.prompt) messages.push({ role: "user", content: opts.prompt });
+      const { text, model } = await ollamaChat({ messages });
+      return { text, provider: "ollama", model };
+    } catch (e) {
+      console.warn("[AI] Ollama failed, falling back:", (e as Error).message?.slice(0, 200));
       if (!lovableKey && !openaiKey) throw e;
     }
   }

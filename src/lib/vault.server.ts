@@ -216,12 +216,30 @@ export async function analyzeContent(title: string, content: string): Promise<Va
   const head = content.length > 60_000 ? `${content.slice(0, 45_000)}\n...\n${content.slice(-15_000)}` : content;
   const userMsg = `File name: ${title}\n\n---\n${head}`;
   let text = "";
-  try {
-    text = await respond(ANALYZE_SYSTEM, userMsg);
-  } catch (e) {
-    console.warn("[vault] primary analysis failed, using backup:", (e as Error).message);
+  const errors: string[] = [];
+  if (process.env.OLLAMA_API_KEY) {
+    try {
+      const { ollamaChat } = await import("./ollama.server");
+      text = (await ollamaChat({ json: true, messages: [{ role: "system", content: ANALYZE_SYSTEM }, { role: "user", content: userMsg }] })).text;
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
   }
-  if (!/\{[\s\S]*\}/.test(text)) text = await openaiRespond(ANALYZE_SYSTEM, userMsg);
+  if (!/\{[\s\S]*\}/.test(text)) {
+    try {
+      text = await respond(ANALYZE_SYSTEM, userMsg);
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
+  }
+  if (!/\{[\s\S]*\}/.test(text)) {
+    try {
+      text = await openaiRespond(ANALYZE_SYSTEM, userMsg);
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
+  }
+  if (!/\{[\s\S]*\}/.test(text)) throw new Error(`All AI services failed: ${errors.join(" | ").slice(0, 400)}`);
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("AI returned no recall card");
   const j = JSON.parse(m[0]) as Partial<VaultAnalysis>;
@@ -256,11 +274,18 @@ export async function processItem(id: string): Promise<void> {
   try {
     const a = await analyzeContent(it.title, it.content);
     const embedText = [a.title ?? it.title, a.summary, ...a.key_findings, a.conclusion ?? "", a.entities.map((e) => e.name).join(", "), it.content.slice(0, 6000)].join("\n");
-    const vec = await embed(embedText);
+    // Embedding is optional: if every embedding service is out, the item is still
+    // filed and found by keyword/entity search.
+    let vecLit: string | null = null;
+    try {
+      vecLit = `[${(await embed(embedText)).join(",")}]`;
+    } catch (e) {
+      console.warn("[vault] embedding unavailable, filing without it:", (e as Error).message);
+    }
     await neonQuery(
       `UPDATE vault_items SET title=COALESCE(NULLIF($2,''), title), kind=$3, summary=$4, key_findings=$5, conclusion=$6,
               embedding=$7::vector, status='ready', error=NULL WHERE id=$1`,
-      [id, a.title ?? "", a.kind, a.summary, a.key_findings, a.conclusion, `[${vec.join(",")}]`],
+      [id, a.title ?? "", a.kind, a.summary, a.key_findings, a.conclusion, vecLit],
     );
     const all = [...a.entities, ...regexEntities(it.content).map((e) => ({ ...e, context: null }))];
     const seen = new Set<string>();

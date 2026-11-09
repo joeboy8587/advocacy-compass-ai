@@ -5,6 +5,8 @@
 - [x] Connect FBI company references and consent-decree records to case files and Josiah.
 - [x] Verify new reference displays and matching with real records.
 - [ ] Local profiler baseline rebuild, retraining and ground-elevation backfill — requires the user's PC.
+- [ ] Add verified previously-unscored progress to Clusters — unfinished previous request.
+- [ ] Investigate zero aircraft detection counts and whether public.detections changed.
 - [x] Build and verify an interactive network graph from existing Neon records.
 - [x] Broaden both Josiah chats beyond top operators; verified N833SB and conversation follow-up in the visible chat.
 - [x] Give both Josiah chats read-only access to Neon detections; verified five N833SB sightings against source records.

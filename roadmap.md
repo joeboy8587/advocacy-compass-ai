@@ -6,7 +6,7 @@
 - [x] Verify new reference displays and matching with real records.
 - [ ] Local profiler baseline rebuild, retraining and ground-elevation backfill — requires the user's PC.
 - [ ] Add verified previously-unscored progress to Clusters — unfinished previous request.
-- [x] Investigate zero aircraft detection counts: 1,070 zero profiles; 1,031 quarantine-only, 39 without retained rows. Further reason/date checks blocked by the Neon connection rejecting its password; no data changed.
+- [x] Investigate zero aircraft detection counts: 1,070 zero profiles; 1,031 quarantine-only (1,073 ALTITUDE_HIGH and 101 NO_POSITION rows), 39 without retained rows. Connection restored; further height/date checks timed out. No data changed; source/date of exclusions and missing rows remain unverified.
 - [x] Build and verify an interactive network graph from existing Neon records.
 - [x] Broaden both Josiah chats beyond top operators; verified N833SB and conversation follow-up in the visible chat.
 - [x] Give both Josiah chats read-only access to Neon detections; verified five N833SB sightings against source records.

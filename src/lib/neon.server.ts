@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { neonQuery as gatewayQuery } from "./reference-neon.server";
 
 // The command center runs on a serverless Worker runtime where long-lived TCP
 // pools (node-postgres) are unreliable: a saturated 3-connection pool made
@@ -14,6 +15,8 @@ type SqlClient = ReturnType<typeof neon>;
 declare global {
   // eslint-disable-next-line no-var
   var __neonSql: SqlClient | undefined;
+  // eslint-disable-next-line no-var
+  var __neonUseGateway: boolean | undefined;
 }
 
 function getSql(): SqlClient {
@@ -31,6 +34,30 @@ export async function neonQuery<T = unknown>(
   text: string,
   params: unknown[] = [],
   opts: { timeoutMs?: number } = {},
+): Promise<T[]> {
+  // The saved direct login can go stale (rotated password) while the linked
+  // connector stays valid; fall back to the connector instead of failing.
+  if (globalThis.__neonUseGateway || !process.env.NEON_DATABASE_URL) {
+    const r = await gatewayQuery<{ rows: T[] }>(text, params);
+    return r.rows;
+  }
+  try {
+    return await directQuery<T>(text, params, opts);
+  } catch (err) {
+    const msg = String((err as Error)?.message ?? err);
+    if (/password authentication failed|28P01|endpoint cannot be found/i.test(msg) && process.env.NEON_API_KEY) {
+      globalThis.__neonUseGateway = true;
+      const r = await gatewayQuery<{ rows: T[] }>(text, params);
+      return r.rows;
+    }
+    throw err;
+  }
+}
+
+async function directQuery<T>(
+  text: string,
+  params: unknown[],
+  opts: { timeoutMs?: number },
 ): Promise<T[]> {
   const sql = getSql();
   const timeoutMs = opts.timeoutMs ?? QUERY_TIMEOUT_MS;

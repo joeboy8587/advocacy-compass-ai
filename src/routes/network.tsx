@@ -1,14 +1,16 @@
 import { createFileRoute, ClientOnly, Link } from '@tanstack/react-router';
 import { queryOptions, useSuspenseQuery } from '@tanstack/react-query';
-import { lazy, Suspense, useMemo, useState } from 'react';
-import { Network, Loader2, Download, Search, X } from 'lucide-react';
-import { getStoredNetwork } from '@/lib/network-graph.functions';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useServerFn } from '@tanstack/react-start';
+import { Network, Loader2, Download, Search, X, RefreshCw } from 'lucide-react';
+import { getStoredNetwork, syncNetworkNow } from '@/lib/network-graph.functions';
 import { filterNetwork } from '@/lib/network-graph';
 import { Button } from '@/components/ui/button';
 import { LoadErrorPanel } from '@/components/LoadErrorPanel';
 
 const Canvas = lazy(() => import('@/components/NetworkGraphCanvas'));
-const options = queryOptions({ queryKey: ['stored-network'], queryFn: () => getStoredNetwork(), staleTime: 600_000, retry: false });
+const options = queryOptions({ queryKey: ['stored-network'], queryFn: () => getStoredNetwork(), staleTime: 60_000, refetchInterval: 120_000, retry: false });
 const Loading = () => <div className="h-[580px] flex items-center justify-center text-muted-foreground gap-2"><Loader2 className="size-4 animate-spin" /> Loading network…</div>;
 export const Route = createFileRoute('/network')({
   head: () => ({ meta: [{ title: 'Network Graph // Watchtower' }, { name: 'description', content: 'Explore recorded aircraft and company connections with relationship details and source dates.' }, { property: 'og:title', content: 'Network Graph // Watchtower' }, { property: 'og:description', content: 'Watchtower recorded aircraft and company relationship graph.' }, { property: 'og:type', content: 'website' }, { name: 'twitter:card', content: 'summary' }] }),
@@ -24,6 +26,19 @@ function NetworkPage() {
   const [relation, setRelation] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [edgeId, setEdgeId] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const sync = useServerFn(syncNetworkNow);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<{ at: string; msg: string } | null>(null);
+  const running = useRef(false);
+  const runSync = async () => {
+    if (running.current) return; running.current = true; setSyncing(true);
+    try { const r = await sync(); setLastSync({ at: r.scannedAt, msg: r.newAircraft ? `Added ${r.newAircraft} aircraft${r.newCompanies ? ` and ${r.newCompanies} companies` : ''}` : 'No new shell aircraft' }); if (r.newAircraft) await qc.invalidateQueries({ queryKey: ['stored-network'] }); }
+    catch (e) { setLastSync({ at: new Date().toISOString(), msg: (e as Error).message }); }
+    finally { running.current = false; setSyncing(false); }
+  };
+  useEffect(() => { void runSync(); const t = setInterval(() => void runSync(), 300_000); return () => clearInterval(t); }, []);
+  const unreviewed = data.nodes.filter(n => n.metadata.review_status === 'UNREVIEWED').length;
   const graph = useMemo(() => filterNetwork(data, search, relation), [data, search, relation]);
   const node = data.nodes.find(n => n.id === selected);
   const edge = data.edges.find(e => e.id === edgeId);
@@ -35,9 +50,14 @@ function NetworkPage() {
   return <div className="p-4 md:p-6 space-y-4">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl text-primary flex items-center gap-2"><Network /> Network Graph</h1><p className="text-xs text-muted-foreground mt-2">{data.nodes.length} recorded entries · {data.edges.length} connections · Last recorded {latest ? new Date(latest).toLocaleDateString() : 'unknown'}</p></div>
-      <Button variant="outline" size="sm" onClick={exportGraph}><Download /> Export</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-muted-foreground flex items-center gap-1"><span className={`size-2 rounded-full ${syncing ? 'bg-accent animate-pulse' : 'bg-primary'}`} />Auto-sync on · {syncing ? 'scanning radar…' : lastSync ? `${lastSync.msg} · ${new Date(lastSync.at).toLocaleTimeString()}` : 'starting'}</span>
+        <Button variant="outline" size="sm" disabled={syncing} onClick={() => void runSync()}><RefreshCw className={syncing ? 'animate-spin' : ''} /> Sync now</Button>
+        <Button variant="outline" size="sm" onClick={exportGraph}><Download /> Export</Button>
+      </div>
     </header>
-    <p className="text-xs text-muted-foreground border-l-2 border-primary pl-3">Stored network records, not a live FAA ownership check. A connection does not establish surveillance or wrongdoing; ownership and airframe neither clear nor condemn an aircraft.</p>
+    <p className="text-xs text-muted-foreground border-l-2 border-primary pl-3">New aircraft are added automatically every 5 minutes when their FAA owner matches a company on this graph and our radar has seen them in the last 7 days. A connection does not establish surveillance or wrongdoing; ownership and airframe neither clear nor condemn an aircraft.</p>
+    {unreviewed > 0 && <p className="text-xs text-accent">{unreviewed} entries were added automatically and are marked "unreviewed" for the later human review.</p>}
     {data.truncated && <p className="text-xs text-primary">Display limited to 500 entries and 1,000 connections.</p>}
     <div className="flex flex-wrap gap-3 items-center">
       <label className="flex items-center gap-2 border border-border bg-input px-3 py-2 flex-1 min-w-48"><Search className="size-4 text-muted-foreground" /><input aria-label="Search network" value={search} onChange={e => { setSearch(e.target.value); setSelected(null); setEdgeId(null); }} placeholder="Aircraft or company…" className="bg-transparent outline-none text-xs w-full" /></label>
@@ -49,7 +69,7 @@ function NetworkPage() {
       <div className="min-w-0">{graph.nodes.length ? <ClientOnly fallback={<Loading />}><Suspense fallback={<Loading />}><Canvas nodes={graph.nodes} edges={graph.edges} selected={selected} onSelect={pickNode} onEdgeSelect={id => { setEdgeId(id); setSelected(null); }} /></Suspense></ClientOnly> : <div className="h-64 grid place-items-center text-sm text-muted-foreground border border-border">No matching network entries.</div>}</div>
       <aside className="border-l border-border pl-4 space-y-3 min-w-0">
         <div className="flex justify-between items-center"><h2 className="text-xs uppercase text-accent">{node ? 'Entity record' : edge ? 'Relationship record' : 'Network directory'}</h2>{(node || edge) && <Button variant="ghost" size="icon" aria-label="Close record" title="Close record" onClick={() => { setSelected(null); setEdgeId(null); }}><X /></Button>}</div>
-        {node ? <><h3 className="text-sm text-primary break-words">{node.label}</h3><p className="text-xs text-muted-foreground">{node.kind} · Recorded {node.recordedAt ? new Date(node.recordedAt).toLocaleDateString() : 'date unknown'}</p>{Object.keys(node.metadata).length > 0 && <pre className="text-[11px] whitespace-pre-wrap break-words">{JSON.stringify(node.metadata, null, 2)}</pre>}<p className="text-xs text-muted-foreground">{related.length} recorded connections</p>{related.map(e => <Button key={e.id} variant="outline" className="h-auto w-full text-left justify-start whitespace-normal text-xs py-2" onClick={() => { setEdgeId(e.id); setSelected(null); }}>{e.relation.replace(/_/g, ' ').toLowerCase()} · {label(e.source === node.id ? e.target : e.source)}</Button>)}<Button variant="outline" size="sm" asChild><Link to="/intel">Ask Josiah</Link></Button></> : edge ? <><p className="text-sm break-words">{label(edge.source)}</p><p className="text-xs text-accent">{edge.relation.replace(/_/g, ' ').toLowerCase()}</p><p className="text-sm break-words">{label(edge.target)}</p><p className="text-xs text-muted-foreground">Stored weight: {edge.weight ?? 'not supplied'} (not a confidence percentage)</p><p className="text-xs text-muted-foreground">Recorded {edge.recordedAt ? new Date(edge.recordedAt).toLocaleDateString() : 'date unknown'}</p><pre className="text-[11px] whitespace-pre-wrap break-words">{Object.keys(edge.metadata).length ? JSON.stringify(edge.metadata, null, 2) : 'No supporting metadata stored.'}</pre><Button variant="outline" size="sm" onClick={() => pickNode(edge.source)}>Source record</Button><Button variant="outline" size="sm" onClick={() => pickNode(edge.target)}>Target record</Button></> : <div className="max-h-[530px] overflow-auto space-y-1">{graph.nodes.map(n => <Button key={n.id} variant="ghost" onClick={() => pickNode(n.id)} className="w-full justify-start h-auto py-2 text-xs whitespace-normal text-left">{n.label}</Button>)}</div>}
+        {node ? <><h3 className="text-sm text-primary break-words">{node.label}</h3>{node.metadata.review_status === 'UNREVIEWED' && <p className="text-[10px] uppercase text-accent">Auto-added · unreviewed</p>}<p className="text-xs text-muted-foreground">{node.kind} · Recorded {node.recordedAt ? new Date(node.recordedAt).toLocaleDateString() : 'date unknown'}</p>{Object.keys(node.metadata).length > 0 && <pre className="text-[11px] whitespace-pre-wrap break-words">{JSON.stringify(node.metadata, null, 2)}</pre>}<p className="text-xs text-muted-foreground">{related.length} recorded connections</p>{related.map(e => <Button key={e.id} variant="outline" className="h-auto w-full text-left justify-start whitespace-normal text-xs py-2" onClick={() => { setEdgeId(e.id); setSelected(null); }}>{e.relation.replace(/_/g, ' ').toLowerCase()} · {label(e.source === node.id ? e.target : e.source)}</Button>)}<Button variant="outline" size="sm" asChild><Link to="/intel">Ask Josiah</Link></Button></> : edge ? <><p className="text-sm break-words">{label(edge.source)}</p><p className="text-xs text-accent">{edge.relation.replace(/_/g, ' ').toLowerCase()}</p><p className="text-sm break-words">{label(edge.target)}</p><p className="text-xs text-muted-foreground">Stored weight: {edge.weight ?? 'not supplied'} (not a confidence percentage)</p><p className="text-xs text-muted-foreground">Recorded {edge.recordedAt ? new Date(edge.recordedAt).toLocaleDateString() : 'date unknown'}</p><pre className="text-[11px] whitespace-pre-wrap break-words">{Object.keys(edge.metadata).length ? JSON.stringify(edge.metadata, null, 2) : 'No supporting metadata stored.'}</pre><Button variant="outline" size="sm" onClick={() => pickNode(edge.source)}>Source record</Button><Button variant="outline" size="sm" onClick={() => pickNode(edge.target)}>Target record</Button></> : <div className="max-h-[530px] overflow-auto space-y-1">{graph.nodes.map(n => <Button key={n.id} variant="ghost" onClick={() => pickNode(n.id)} className="w-full justify-start h-auto py-2 text-xs whitespace-normal text-left">{n.label}</Button>)}</div>}
         <p className="text-[10px] text-muted-foreground break-words">Source: shell_network_nodes / shell_network_edges</p>
       </aside>
     </div>

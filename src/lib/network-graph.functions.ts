@@ -20,3 +20,8 @@ export const getStoredNetwork = createServerFn({ method: 'GET' }).handler(async 
     throw new Error(neonUserError(error).message);
   }
 });
+export const syncNetworkNow = createServerFn({ method: 'POST' }).handler(async () => {
+  const { syncShellNetwork } = await import('./network-sync.server');
+  try { return await syncShellNetwork(); }
+  catch (error) { console.error('Network sync', error); throw new Error('The network scan could not finish. It will try again automatically.'); }
+});

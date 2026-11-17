@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Fragment, useState, useCallback } from "react";
 import { toast } from "sonner";
+import { exifCapture } from "@/lib/screenshot-time";
 import {
   uploadScreenshot,
   listScreenshots,
@@ -18,7 +19,14 @@ import {
 } from "@/lib/screenshots.functions";
 
 export const Route = createFileRoute("/screenshots")({
-  head: () => ({ meta: [{ title: "Radar Screenshots // Watchtower" }] }),
+  head: () => ({ meta: [
+    { title: "Radar Screenshots // Watchtower" },
+    { name: "description", content: "Watchtower screenshot evidence, capture timestamps and flight-record matches." },
+    { property: "og:title", content: "Radar Screenshots // Watchtower" },
+    { property: "og:description", content: "Review screenshot evidence and matched flight records." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
   component: ScreenshotsPage,
 });
 
@@ -150,7 +158,7 @@ function ScreenshotsPage() {
   const qc = useQueryClient();
   const [parsed, setParsed] = useState<ParsedFile[]>([]);
   const [search, setSearch] = useState("");
-  const [defaultTzMin, setDefaultTzMin] = useState(-420);
+  const [defaultTzMin, setDefaultTzMin] = useState(-480);
   const [busy, setBusy] = useState(false);
   const [matches, setMatches] = useState<Record<string, { status: string; matches: DetectionMatch[] }>>({});
   const [matchingId, setMatchingId] = useState<string | null>(null);
@@ -214,7 +222,8 @@ function ScreenshotsPage() {
       let naiveLocal: string | null = null;
       try {
         const exifr = (await import("exifr")).default;
-        raw = (await exifr.parse(file, { tiff: true, exif: true, gps: true })) ?? null;
+        // Preserve the actual local EXIF text; exifr's Date revival drops its offset.
+        raw = (await exifr.parse(file, { tiff: true, exif: true, gps: true, reviveValues: false })) ?? null;
         naiveLocal =
           naiveFromExifValue(raw?.DateTimeOriginal) ||
           naiveFromExifValue(raw?.CreateDate) ||
@@ -222,8 +231,11 @@ function ScreenshotsPage() {
       } catch {
         /* no exif */
       }
-      const isoUtc = naiveLocalToUtcIso(naiveLocal, defaultTzMin);
-      const parts = splitNaive(naiveLocal);
+      const capture = exifCapture(raw);
+      const offset = capture?.offsetMin ?? defaultTzMin;
+      const parts = capture ?? splitNaive(naiveLocal);
+      if (capture) naiveLocal = joinNaive(capture.date, capture.time);
+      const isoUtc = capture?.utc ?? naiveLocalToUtcIso(naiveLocal, offset);
       next.push({
         file,
         sha256: sha,
@@ -232,7 +244,7 @@ function ScreenshotsPage() {
         exifTakenAt: isoUtc,
         captureDate: parts.date,
         captureTime: parts.time,
-        captureDateSource: parts.date ? "EXIF" : null,
+        captureDateSource: parts.date ? (capture ? "EXIF with timezone" : "EXIF") : null,
         rawExif: raw,
         tail: guessTail(file.name),
         icaoHex: "",
@@ -240,7 +252,7 @@ function ScreenshotsPage() {
         aircraftType: "",
         altitude: "",
         groundspeed: "",
-        tzOffsetMin: defaultTzMin,
+        tzOffsetMin: offset,
         notes: "",
         scanning: false,
         visionApplied: false,
@@ -272,7 +284,9 @@ function ScreenshotsPage() {
           const t = statusBarTo24h(v.status_bar_time, v.status_bar_period);
           // Date block read off the image always wins — EXIF is second, filename is never used.
           const date = v.capture_date || x.captureDate || "";
-          const time = t || x.captureTime || "";
+          // A phone's 12-hour clock must not replace an offset-bearing EXIF instant.
+          const time = x.captureDateSource === "EXIF with timezone" && !v.capture_date
+            ? x.captureTime : t || x.captureTime || "";
           const dateSource = v.capture_date
             ? (v.capture_date_source || "image date block")
             : x.captureDateSource;
@@ -340,6 +354,8 @@ function ScreenshotsPage() {
           groundspeed_kts: p.groundspeed ? Number(p.groundspeed) : null,
           notes: p.notes || null,
           status_bar_local: statusBarLocal,
+          time_source: p.captureDateSource,
+          time_confidence: p.captureDateSource === "EXIF with timezone" ? "OFFSET_EXIF" : "REVIEWED",
         },
       });
 
@@ -350,13 +366,13 @@ function ScreenshotsPage() {
       }
 
       let matchInfo: { status: string; matches: DetectionMatch[] } | null = null;
-      if (p.tail || p.icaoHex) {
+      if (p.tail || p.icaoHex || p.exifTakenAt) {
         try {
           const m = await matchScreenshot({ data: { id: res.id, window_seconds: 900, tod_days: 14 } });
           setMatches((prev) => ({ ...prev, [res.id]: m }));
           matchInfo = m;
-        } catch {
-          /* silent — match is optional */
+        } catch (error) {
+          toast.error(`Screenshot saved, but flight matching failed: ${(error as Error).message}. Use Re-match to retry.`);
         }
       }
 
@@ -368,7 +384,7 @@ function ScreenshotsPage() {
           `${tail} committed · ${matchInfo.matches.length} ADS-B match${matchInfo.matches.length === 1 ? "" : "es"} (best Δ${best.delta_s}s)`,
         );
       } else {
-        toast.success(`${tail} committed to vault` + (p.tail || p.icaoHex ? " · no ADS-B match found" : ""));
+        toast.success(`${tail} committed to vault` + (matchInfo ? " · no ADS-B match found" : " · matching not completed"));
       }
     } catch (e) {
       const msg = (e as Error).message ?? "Upload failed";
@@ -682,7 +698,7 @@ function ScreenshotsPage() {
                 <div className="flex flex-wrap gap-2 pt-2 items-center">
                   <button
                     onClick={() => commit(i)}
-                    disabled={p.committing}
+                    disabled={p.committing || p.scanning}
                     className="px-3 py-1.5 text-[11px] uppercase tracking-widest bg-primary text-primary-foreground rounded-sm hover:opacity-90 inline-flex items-center gap-1 disabled:opacity-50"
                   >
                     {p.committing ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}

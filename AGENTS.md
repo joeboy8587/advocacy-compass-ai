@@ -22,6 +22,8 @@
 
 ## Intelligence Vault
 
+- Screenshot capture uses offset-bearing EXIF as an absolute instant; legacy timestamp repairs retain the previous value in provenance, and time-of-day-only candidates never confirm an exact match — why: ambiguous phone clocks and double timezone conversion must not create false evidence links.
+
 - Both Josiah chat entry points use shared question-specific read-only connector retrieval before generation; visible chat passes bounded conversation history — why: every provider sees relevant cases, filed research and detections instead of only a top-owner snapshot.
 - Shared Josiah prompts separate internal co-investigator dialogue from external brief drafting and describe only implemented tools; detection retrieval supplies Pacific timestamps — why: chat tone must not override evidence integrity or depend on model timezone arithmetic.
 - Josiah's dynamic SQL executes in a gateway read-only transaction and detections use a parameterized dedicated tool — why: investigative access must not mutate records or depend on a particular operator.

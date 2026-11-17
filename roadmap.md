@@ -1,5 +1,6 @@
 
 - [x] Verify antenna vs feed timezone (both UTC, correct)
+- [x] Repair screenshot capture-time matching and Pacific-to-UTC EXIF conversion; all four recent screenshots matched real detections, and original-image re-upload preserved its timestamp.
 - [ ] Raw messages feed stopped Sep 16 — user is tracing it
 - [x] Frame-level evidence check from existing raw messages
 - [x] Connect FBI company references and consent-decree records to case files and Josiah.

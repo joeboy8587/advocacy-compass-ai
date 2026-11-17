@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
+import { exifCapture, screenshotMatchStatus } from "./screenshot-time";
 
 // ---------- Josiah Vision: structured scene extraction from a radar screenshot ----------
 // This is NOT OCR. The model reads the screenshot as a structured scene: it understands
@@ -421,14 +422,29 @@ export const matchScreenshot = createServerFn({ method: "POST" })
       map_labels: string[] | null;
       aircraft_type: string | null;
       altitude_ft: number | null;
+      raw_exif: Record<string, unknown> | null;
+      time_source: string | null;
     }>(
       `SELECT id, exif_taken_at, tail, icao_hex, status_bar_local, tz_offset_min,
-              masked, map_labels, aircraft_type, altitude_ft
+              masked, map_labels, aircraft_type, altitude_ft, raw_exif, time_source
        FROM radar_screenshots WHERE id = $1`,
       [data.id],
     );
     if (!shotRows.length) throw new Error("Screenshot not found");
     const shot = shotRows[0];
+    // Repair legacy uploads whose offset-bearing EXIF was double-converted and
+    // overwritten by the ambiguous phone clock. Preserve the prior value as provenance.
+    const capture = !shot.time_source ? exifCapture(shot.raw_exif) : null;
+    if (capture) {
+      await q(`UPDATE radar_screenshots SET exif_taken_at=$2::timestamptz,
+        tz_offset_min=$3, status_bar_local=$4, time_source='EXIF with timezone',
+        time_confidence='OFFSET_EXIF', time_signals=COALESCE(time_signals, '{}'::jsonb) || $5::jsonb
+        WHERE id=$1`, [shot.id, capture.utc, capture.offsetMin, capture.time,
+        JSON.stringify({ previous_saved_utc: shot.exif_taken_at, correction: "offset-bearing EXIF restored" })]);
+      shot.exif_taken_at = capture.utc;
+      shot.tz_offset_min = capture.offsetMin;
+      shot.status_bar_local = capture.time;
+    }
     let tail = shot.tail?.toUpperCase() ?? null;
     let icao = shot.icao_hex?.toLowerCase() ?? null;
 
@@ -505,8 +521,8 @@ export const matchScreenshot = createServerFn({ method: "POST" })
     // Build aircraft predicate, including resolved icao/tail
     const params: unknown[] = [];
     const preds: string[] = [];
-    if (icao) { params.push(icao); preds.push(`lower(d.icao_hex) = $${params.length}`); }
-    if (tail) { params.push(tail); preds.push(`upper(d.registration) = $${params.length}`); }
+    if (icao) { params.push([icao.toUpperCase(), icao.toLowerCase()]); preds.push(`d.icao_hex = ANY($${params.length}::text[])`); }
+    if (tail) { params.push([tail.toUpperCase(), tail.toLowerCase()]); preds.push(`d.registration = ANY($${params.length}::text[])`); }
     const aircraftPred = `(${preds.join(" OR ")})`;
 
     // --- Pass 1: exact-time window around EXIF/synthesized UTC ---
@@ -568,13 +584,7 @@ export const matchScreenshot = createServerFn({ method: "POST" })
 
     const best = matches[0];
     const hasExactDate = Boolean(shot.exif_taken_at);
-    const status = !hasExactDate
-      ? "NEEDS_DATE"
-      : matches.length === 0
-        ? "UNEXPLAINED"
-        : best.delta_s <= 300
-          ? "CONFIRMED_NAMED"
-          : "PRESENCE_CORRELATED";
+    const status = screenshotMatchStatus(hasExactDate, method, matches.length, best?.delta_s);
     await q(
       `UPDATE radar_screenshots
          SET match_status=$2, match_count=$3, match_window_s=$4,

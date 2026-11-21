@@ -1,5 +1,6 @@
 
 - [x] Verify antenna vs feed timezone (both UTC, correct)
+- [x] Add and verify saved multi-factor case review without automatic proof, scoring or publication; case 0020 draft persisted on reopening, completion safeguards and mobile layout checked.
 - [x] Repair screenshot capture-time matching and Pacific-to-UTC EXIF conversion; all four recent screenshots matched real detections, and original-image re-upload preserved its timestamp.
 - [ ] Raw messages feed stopped Sep 16 — user is tracing it
 - [x] Frame-level evidence check from existing raw messages

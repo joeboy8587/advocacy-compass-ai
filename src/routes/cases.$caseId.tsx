@@ -24,6 +24,8 @@ import { HypothesisDeck } from "@/components/HypothesisDeck";
 import { LegalActionPanel } from "@/components/LegalActionPanel";
 import { InvestigationMemory } from "@/components/InvestigationMemory";
 import { InvestigationReferences } from "@/components/InvestigationReferences";
+import { CaseFactorReview } from "@/components/CaseFactorReview";
+import { Button } from "@/components/ui/button";
 
 import { sha256Hex, extractText } from "@/lib/file-extract";
 
@@ -42,7 +44,7 @@ export const Route = createFileRoute("/cases/$caseId")({
 
 const STATUSES = ["DRAFT", "REVIEW", "CONFIRMED", "PUBLISHED", "MERGED", "DISMISSED"] as const;
 type Status = (typeof STATUSES)[number];
-type Tab = "overview" | "investigate" | "osint" | "verify" | "triage";
+type Tab = "overview" | "investigate" | "osint" | "verify" | "review" | "triage";
 
 function CaseDetail() {
   const { caseId } = Route.useParams();
@@ -121,9 +123,9 @@ function CaseDetail() {
         </div>
       </header>
 
-      <nav className="flex gap-1 border-b border-border print:hidden">
-        {(["overview", "investigate", "osint", "verify", "triage"] as const).map((t) => (
-          <button
+      <nav className="flex flex-wrap gap-1 border-b border-border print:hidden">
+        {(["overview", "investigate", "osint", "verify", "review", "triage"] as const).map((t) => (
+          <Button variant="ghost"
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-[11px] uppercase tracking-widest border-b-2 -mb-px transition ${
@@ -133,7 +135,7 @@ function CaseDetail() {
             }`}
           >
             {t}
-          </button>
+          </Button>
         ))}
       </nav>
 
@@ -141,6 +143,7 @@ function CaseDetail() {
       {tab === "investigate" && <InvestigateTab c={c} caseId={caseId} />}
       {tab === "osint" && <OsintTab c={c} caseId={caseId} />}
       {tab === "verify" && <VerifyTab caseId={caseId} />}
+      {tab === "review" && <CaseFactorReview key={caseId} caseId={caseId} notes={c.reviewer_notes} />}
       {tab === "triage" && (
         <TriageTab
           c={c}

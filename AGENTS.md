@@ -31,6 +31,8 @@
 
 ## Investigation references
 
+- Multi-factor case reviews use a versioned block in existing case reviewer notes and the existing case-save path; they never change scores, case status or public-release approval — why: structured internal inquiry must stay separate from proof and publication.
+
 - The standalone Network Graph uses bounded read-only `shell_network_nodes` / `shell_network_edges` reads and a client-only React Flow canvas; source dates and raw relation labels are preserved, with no scoring or ownership verification implied — why: saved relationships must remain inspectable without becoming confirmed findings.
 - New company/decree reads use `investigation-references.server.ts` through the linked Neon connector and `reference-neon.server.ts` — why: one bounded read-only source feeds case UI, operator references, and both Josiah paths without duplicating evidence.
 - Reference rows stay separate from machine leads, violation totals, scores and investigator memory; company matches require exact FAA title-owner names, and decree allegations expose aircraft-mention provenance — why: historical ownership, monitoring activity and unsupported legal claims must not become confirmed findings automatically.

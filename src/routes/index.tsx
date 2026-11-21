@@ -42,6 +42,10 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "Command Center // Watchtower" },
       { name: "description", content: "Live operations dashboard for the Watchtower advocacy command center." },
+      { property: "og:title", content: "Watchtower Command Center" },
+      { property: "og:description", content: "Live aircraft records, investigative threads and case coordination for Watchtower." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   // No loader: the KPI rollup fans out into ~18 Neon queries, and a cold-wake

@@ -22,6 +22,8 @@
 
 ## Intelligence Vault
 
+- Screenshot vision failures use sanitized, actionable messages while retaining pending originals and EXIF fields — why: provider diagnostics must not leak credentials or erase evidence.
+
 - Screenshot capture uses offset-bearing EXIF as an absolute instant; legacy timestamp repairs retain the previous value in provenance, and time-of-day-only candidates never confirm an exact match — why: ambiguous phone clocks and double timezone conversion must not create false evidence links.
 
 - Both Josiah chat entry points use shared question-specific read-only connector retrieval before generation; visible chat passes bounded conversation history — why: every provider sees relevant cases, filed research and detections instead of only a top-owner snapshot.

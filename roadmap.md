@@ -1,5 +1,7 @@
 
 - [x] Verify antenna vs feed timezone (both UTC, correct)
+- [ ] Diagnose reported radar vision failure — six existing samples succeeded; awaiting a failing image from the user.
+- [x] Show actionable screenshot scan failures without exposing provider responses; simulated network failure preserved the original UTC capture time and five timezone tests passed.
 - [x] Add and verify saved multi-factor case review without automatic proof, scoring or publication; case 0020 draft persisted on reopening, completion safeguards and mobile layout checked.
 - [x] Repair screenshot capture-time matching and Pacific-to-UTC EXIF conversion; all four recent screenshots matched real detections, and original-image re-upload preserved its timestamp.
 - [ ] Raw messages feed stopped Sep 16 — user is tracing it

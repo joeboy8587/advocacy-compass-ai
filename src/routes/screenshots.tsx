@@ -8,6 +8,7 @@ import {
 import { Fragment, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { exifCapture } from "@/lib/screenshot-time";
+import { visionErrorMessage } from "@/lib/vision-error";
 import {
   uploadScreenshot,
   listScreenshots,
@@ -724,9 +725,10 @@ function ScreenshotsPage() {
                     </span>
                   )}
                   {p.visionError && (
-                    <span className="text-[10px] uppercase tracking-widest text-primary inline-flex items-center gap-1">
-                      <AlertTriangle className="size-3" /> Vision error
-                    </span>
+                    <div role="alert" className="basis-full min-w-0 text-sm text-destructive border-l-2 border-destructive pl-3 py-2">
+                      <div className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4 shrink-0" /> Vision scan failed</div>
+                      <p className="mt-1 break-words">{visionErrorMessage(p.visionError)}</p>
+                    </div>
                   )}
                 </div>
               </div>

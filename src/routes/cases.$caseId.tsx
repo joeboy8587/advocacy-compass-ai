@@ -374,9 +374,8 @@ function InvestigateTab({ c, caseId }: { c: { subject_icao: string | null; subje
   });
 
   const shots = useQuery({
-    queryKey: ["shots-subj", icao, reg],
-    queryFn: () => getSubjectScreenshots({ data: { icao, reg } }),
-    enabled: !!(icao || reg),
+    queryKey: ["shots-subj", icao, reg, caseId],
+    queryFn: () => getSubjectScreenshots({ data: { icao, reg, caseId } }),
   });
 
   const [selected, setSelected] = useState<Set<string>>(new Set());

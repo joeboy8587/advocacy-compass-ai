@@ -9,6 +9,9 @@ import { Fragment, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { exifCapture } from "@/lib/screenshot-time";
 import { visionErrorMessage } from "@/lib/vision-error";
+import { Link } from "@tanstack/react-router";
+import { getCases } from "@/lib/watchtower.functions";
+import { attachScreenshotToCase } from "@/lib/casework.functions";
 import {
   uploadScreenshot,
   listScreenshots,
@@ -845,6 +848,7 @@ function ScreenshotsPage() {
                           <Link2 className="size-3" />
                           {matchingId === s.id ? "Matching…" : "Re-match"}
                         </button>
+                        <AttachToCase shot={s} />
                         <button
                           onClick={() => startEdit(s)}
                           className="p-1 text-muted-foreground hover:text-accent rounded-sm"
@@ -1091,5 +1095,86 @@ function MatchBadge({ status, count, deltaS }: { status: string; count: number; 
         </span>
       )}
     </div>
+  );
+}
+
+/* ============================================================
+   ATTACH TO CASE — one-click visual exhibit linking
+   ============================================================ */
+function AttachToCase({ shot }: { shot: { id: string; tail: string | null; icao_hex: string | null; case_ids?: string[] | null } }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [pick, setPick] = useState("");
+  const cases = useQuery({
+    queryKey: ["cases-for-attach"],
+    queryFn: () => getCases({ data: { limit: 300 } }),
+    enabled: open,
+  });
+  const linked = shot.case_ids ?? [];
+  const tail = (shot.tail ?? "").toUpperCase();
+  const hex = (shot.icao_hex ?? "").toLowerCase();
+  const options = (cases.data ?? []).filter((c): c is typeof c & { case_id: string } => c.status !== "MERGED" && !!c.case_id);
+  const suggested = options.filter((c) =>
+    (tail && ((c.subject_reg ?? "").toUpperCase() === tail || (c.related_tails ?? []).some((t: string) => t.toUpperCase() === tail))) ||
+    (hex && (c.subject_icao ?? "").toLowerCase() === hex));
+  const attach = useMutation({
+    mutationFn: (caseId: string) => attachScreenshotToCase({ data: { screenshotId: shot.id, caseId } }),
+    onSuccess: (r) => {
+      toast.success(`Attached to ${r.caseId} as a visual exhibit`);
+      qc.invalidateQueries({ queryKey: ["screenshots"] });
+      qc.invalidateQueries({ queryKey: ["shots-subj"] });
+      setOpen(false); setPick("");
+    },
+    onError: (e: Error) => toast.error(`Could not attach: ${e.message}`),
+  });
+  return (
+    <span className="relative inline-flex items-center gap-1">
+      {linked.map((id) => (
+        <Link key={id} to="/cases/$caseId" params={{ caseId: id }}
+          className="text-[10px] font-mono px-1 rounded-sm bg-accent/15 text-accent hover:underline" title="Open case">
+          {id}
+        </Link>
+      ))}
+      <button onClick={() => setOpen((v) => !v)}
+        className="text-accent hover:underline text-[10px] uppercase tracking-widest inline-flex items-center gap-1"
+        title="Attach this screenshot to a case">
+        <Shield className="size-3" /> Attach
+      </button>
+      {open && (
+        <div className="absolute right-0 bottom-6 z-30 w-72 rounded-sm border border-border bg-popover p-2 text-left shadow-lg space-y-2">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Attach to case</div>
+          {cases.isLoading ? <div className="text-xs flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Loading cases…</div> : (
+            <>
+              {suggested.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[10px] text-muted-foreground">Suggested for {tail || hex}</div>
+                  {suggested.map((c) => (
+                    <button key={c.case_id} disabled={attach.isPending || linked.includes(c.case_id)}
+                      onClick={() => attach.mutate(c.case_id)}
+                      className="w-full text-left text-xs px-2 py-1 rounded-sm bg-secondary hover:bg-accent/20 disabled:opacity-50">
+                      {c.case_id} · {c.subject_reg ?? c.subject_icao ?? "—"}{linked.includes(c.case_id) ? " ✓" : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <select value={pick} onChange={(e) => setPick(e.target.value)}
+                className="w-full bg-background border border-border rounded-sm text-xs px-2 py-1">
+                <option value="">Choose any case…</option>
+                {options.map((c) => (
+                  <option key={c.case_id} value={c.case_id}>{c.case_id} · {c.subject_reg ?? c.subject_icao ?? "—"}</option>
+                ))}
+              </select>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setOpen(false)} className="text-[10px] uppercase text-muted-foreground">Cancel</button>
+                <button aria-label="Confirm attach to case" disabled={!pick || attach.isPending} onClick={() => attach.mutate(pick)}
+                  className="text-[10px] uppercase tracking-widest px-2 py-1 rounded-sm bg-primary text-primary-foreground disabled:opacity-50">
+                  {attach.isPending ? "Attaching…" : "Attach"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </span>
   );
 }

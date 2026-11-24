@@ -240,6 +240,7 @@ async function ensureSchema() {
 
 export type RadarScreenshot = {
   id: string;
+  case_ids?: string[] | null;
   uploaded_at: string;
   source: string;
   filename: string;
@@ -387,7 +388,8 @@ export const listScreenshots = createServerFn({ method: "GET" })
               match_count, match_window_s, best_match_delta_s, match_status,
               status_bar_local, match_method,
               masked, map_labels, contact_count, shot_type,
-              time_source, time_confidence, time_conflict, bind_class
+              time_source, time_confidence, time_conflict, bind_class,
+              to_jsonb(radar_screenshots)->'case_ids' AS case_ids
        FROM radar_screenshots
        ${where}
        ORDER BY uploaded_at DESC

@@ -334,18 +334,53 @@ export type SubjectScreenshot = {
 };
 
 export const getSubjectScreenshots = createServerFn({ method: "GET" })
-  .inputValidator((d: { icao?: string | null; reg?: string | null }) => d)
+  .inputValidator((d: { icao?: string | null; reg?: string | null; caseId?: string | null }) => d)
   .handler(async ({ data }) => {
+    await ensureScreenshotCaseColumn();
     const rows = await q<SubjectScreenshot>(
       `SELECT id::text, uploaded_at, filename, sha256, exif_taken_at,
               match_status, altitude_ft, best_match_delta_s
        FROM radar_screenshots
-       WHERE ($1::text IS NOT NULL AND icao_hex = $1)
+       WHERE ($1::text IS NOT NULL AND lower(icao_hex) = lower($1))
           OR ($2::text IS NOT NULL AND tail ILIKE $2)
-       ORDER BY uploaded_at DESC LIMIT 50`,
-      [data.icao ?? null, data.reg ?? null],
+          OR ($3::text IS NOT NULL AND case_ids @> ARRAY[$3::text])
+       ORDER BY uploaded_at DESC LIMIT 100`,
+      [data.icao ?? null, data.reg ?? null, data.caseId ?? null],
     );
     return rows;
+  });
+
+let screenshotCaseColumn: Promise<void> | null = null;
+function ensureScreenshotCaseColumn() {
+  screenshotCaseColumn ??= (async () => {
+    const r = await q<{ n: number }>(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='radar_screenshots' AND column_name='case_ids'`,
+    );
+    if (!r[0]?.n) await q(`ALTER TABLE radar_screenshots ADD COLUMN IF NOT EXISTS case_ids text[] NOT NULL DEFAULT '{}'`);
+  })().catch((e) => { screenshotCaseColumn = null; throw e; });
+  return screenshotCaseColumn;
+}
+
+// Attach a radar screenshot to a case as a visual exhibit (does not change scores or status).
+export const attachScreenshotToCase = createServerFn({ method: "POST" })
+  .inputValidator((d: { screenshotId: string; caseId: string }) => {
+    if (!d?.screenshotId || !d?.caseId) throw new Error("screenshotId and caseId required");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    await ensureScreenshotCaseColumn();
+    const c = await q<{ case_id: string }>(
+      `SELECT case_id FROM cases WHERE case_id=$1 OR id::text=$1 LIMIT 1`, [data.caseId]);
+    if (!c[0]) throw new Error("Case not found");
+    const r = await q<{ case_ids: string[] }>(
+      `UPDATE radar_screenshots
+          SET case_ids = (SELECT array_agg(DISTINCT x) FROM unnest(case_ids || ARRAY[$2::text]) x)
+        WHERE id::text = $1 RETURNING case_ids`,
+      [data.screenshotId, c[0].case_id],
+    );
+    if (!r[0]) throw new Error("Screenshot not found");
+    return { ok: true, caseId: c[0].case_id, caseIds: r[0].case_ids };
   });
 
 // ============================================================

@@ -55,6 +55,9 @@ function Intel() {
         },
       ]);
     },
+    onError: () => {
+      setMessages((m) => [...m, { role: "assistant", content: "⚠ Josiah couldn’t finish this reply. Your question is still here; please try again." }]);
+    },
   });
 
   const draft = useMutation({
@@ -70,6 +73,9 @@ function Intel() {
           mode: r.ok ? r.mode : undefined,
         },
       ]);
+    },
+    onError: () => {
+      setMessages((m) => [...m, { role: "assistant", content: "⚠ Josiah couldn’t finish this brief. Please try again." }]);
     },
   });
 

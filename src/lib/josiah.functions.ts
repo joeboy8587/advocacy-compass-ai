@@ -151,7 +151,7 @@ export const sendJosiahMessage = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
-    if (!process.env.NVIDIA_NIM_API_KEY && !process.env.LOVABLE_API_KEY && !process.env.OPENAI_API_KEY) {
+    if (!process.env.NVIDIA_NIM_API_KEY && !process.env.OLLAMA_API_KEY && !process.env.LOVABLE_API_KEY && !process.env.OPENAI_API_KEY) {
       throw new Error("No AI key configured (NVIDIA_NIM_API_KEY, LOVABLE_API_KEY or OPENAI_API_KEY)");
     }
     const { neonQuery } = await import("./neon.server");
@@ -255,6 +255,8 @@ ${context}${caseCtx ? `\n\n${caseCtx}` : ""}${osint}${doctrine ? `\n\n# Doctrine
         }
         return "";
       }).trim();
+
+      if (!clean) throw new Error("Josiah did not finish a visible answer. Please try the question again.");
 
       for (const f of facts.slice(0, 3)) {
         await neonQuery(

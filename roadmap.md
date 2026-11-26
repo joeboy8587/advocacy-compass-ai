@@ -1,3 +1,4 @@
+- [ ] Restore Josiah answers when providers emit JSON commands; verify a real Snark chat reply.
 
 - [x] Verify antenna vs feed timezone (both UTC, correct)
 - [ ] Diagnose reported radar vision failure — six existing samples succeeded; awaiting a failing image from the user.

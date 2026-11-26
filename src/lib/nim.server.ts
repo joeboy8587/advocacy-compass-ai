@@ -1,7 +1,8 @@
 // NVIDIA NIM (OpenAI-compatible) chat client with Josiah's read-only DB tools.
 // Server-only.
 
-import { JOSIAH_TOOLS, runJosiahTool } from "./josiah-tools.server";
+import { JOSIAH_TOOLS } from "./josiah-tools.server";
+import { runJosiahToolLoop } from "./josiah-tool-loop.server";
 
 const NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 export const DEFAULT_NIM_MODEL = "nvidia/nemotron-3-super-120b-a12b";
@@ -76,38 +77,10 @@ export async function nimInvestigate(opts: {
     ? `\n\n# LIVE DATABASE ACCESS\nYou are connected to the live Watchtower Neon PostgreSQL corpus and the case files. You have these tools:\n- list_tables(filter) — discover tables/columns before writing SQL\n- run_sql(sql) — read-only SELECT against live data (always LIMIT)\n- search_cases(query) — find case files by case id, tail, ICAO, owner, county\n- get_case(case_id) — full case file plus linked detections and violations\n- aircraft_dossier(identifier) — tail/ICAO dossier: registry owner, flight stats, low-altitude counts, violations, anomalies\n\nRULES: When the operator asks anything factual — counts, tails, owners, dates, cases — CALL A TOOL and answer from the returned rows. Never guess a number. If a query errors, call list_tables and correct the column names. Cite the tail numbers, case ids and counts you retrieved. Speak plain English to a non-technical operator: explain what the data means, never dump raw SQL unless asked.`
     : "";
   const convo: NimMsg[] = [{ role: "system", content: opts.system + toolBrief }, ...opts.messages];
-  const maxSteps = opts.maxSteps ?? 5;
-  let toolCalls = 0;
-
-  for (let step = 0; step < maxSteps; step++) {
-    const msg = await nimCall(convo, model, useTools);
-    const calls = msg.tool_calls ?? [];
-    if (!calls.length) {
-      return { text: (msg.content ?? "").trim(), model, toolCalls };
-    }
-    convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: calls });
-    for (const call of calls) {
-      toolCalls++;
-      let args: Record<string, unknown> = {};
-      try {
-        args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
-      } catch {
-        args = {};
-      }
-      const result = await runJosiahTool(call.function.name, args);
-      convo.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify(result).slice(0, 12000),
-      });
-    }
+  if (!useTools) {
+    const msg = await nimCall(convo, model, false);
+    return { text: (msg.content ?? "").trim(), model, toolCalls: 0 };
   }
-
-  // Out of tool budget — ask for the final answer with tools disabled.
-  const final = await nimCall(
-    [...convo, { role: "user", content: "Stop querying. Answer now using what you have retrieved." }],
-    model,
-    false,
-  );
-  return { text: (final.content ?? "").trim(), model, toolCalls };
+  const result = await runJosiahToolLoop({ messages: convo, call: (messages, tools) => nimCall(messages, model, tools), maxSteps: opts.maxSteps ?? 5 });
+  return { ...result, model };
 }

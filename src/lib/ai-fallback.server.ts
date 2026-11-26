@@ -4,6 +4,7 @@
 // working off the user's OPENAI_API_KEY when the Lovable Gateway fails.
 
 import { generateText } from "ai";
+import { requireJosiahAnswer } from "./josiah-tool-loop.server";
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
 
@@ -53,7 +54,7 @@ export async function generateTextWithFallback(opts: {
         messages: chat,
         tools: opts.tools !== false,
       });
-      if (text) return { text, provider: "nvidia" as const, model };
+      if (text) return { text: requireJosiahAnswer(text), provider: "nvidia" as const, model };
       throw new Error("NVIDIA NIM returned empty text");
     } catch (e) {
       console.warn("[AI] NVIDIA NIM failed, falling back:", (e as Error).message?.slice(0, 200));
@@ -69,8 +70,8 @@ export async function generateTextWithFallback(opts: {
       if (opts.system) messages.push({ role: "system", content: opts.system });
       if (opts.messages) messages.push(...opts.messages.filter((m) => m.role !== "system" || !opts.system));
       if (opts.prompt) messages.push({ role: "user", content: opts.prompt });
-      const { text, model } = await ollamaChat({ messages });
-      return { text, provider: "ollama", model };
+      const { text, model } = await ollamaChat({ messages, tools: opts.tools !== false });
+      return { text: requireJosiahAnswer(text), provider: "ollama", model };
     } catch (e) {
       console.warn("[AI] Ollama failed, falling back:", (e as Error).message?.slice(0, 200));
       if (!lovableKey && !openaiKey) throw e;
@@ -87,7 +88,7 @@ export async function generateTextWithFallback(opts: {
       if (opts.messages) args.messages = opts.messages;
       else if (opts.prompt) args.prompt = opts.prompt;
       const { text } = await generateText(args as Parameters<typeof generateText>[0]);
-      return { text, provider: "lovable", model: opts.model };
+      return { text: requireJosiahAnswer(text), provider: "lovable", model: opts.model };
     } catch (e) {
       const msg = (e as Error).message ?? "";
       console.warn("[AI] Lovable failed, attempting OpenAI fallback:", msg.slice(0, 200));
@@ -113,5 +114,5 @@ export async function generateTextWithFallback(opts: {
     throw new Error(`OpenAI ${res.status}: ${body.slice(0, 300)}`);
   }
   const j = (await res.json()) as { choices: Array<{ message: { content: string } }> };
-  return { text: j.choices[0].message.content ?? "", provider: "openai", model: oaModel };
+  return { text: requireJosiahAnswer(j.choices[0]?.message.content ?? ""), provider: "openai", model: oaModel };
 }
